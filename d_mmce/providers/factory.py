@@ -70,6 +70,11 @@ class ProviderFactory:
     def create_all(**provider_configs: dict[str, Any]) -> list[ModelProvider]:
         """Create all registered providers, passing per-provider kwargs.
 
+        .. note::
+            The ``ollama`` provider is **skipped** by this synchronous method
+            because discovering locally-available models requires async I/O.
+            Use :meth:`create_all_async` instead to include local models.
+
         Parameters
         ----------
         **provider_configs
@@ -83,10 +88,43 @@ class ProviderFactory:
         """
         providers: list[ModelProvider] = []
         for name, cls in _REGISTRY.items():
+            if name == "ollama":
+                # Ollama needs async discovery — handled by create_all_async
+                continue
             cfg = provider_configs.get(name, {})
             try:
                 providers.append(cls(**cfg))
             except Exception:
                 logger.warning("Skipping provider '%s' (instantiation failed)", name, exc_info=True)
+        return providers
+
+    @staticmethod
+    async def create_all_async(**provider_configs: dict[str, Any]) -> list[ModelProvider]:
+        """Create all providers including auto-discovered Ollama local models.
+
+        This async variant queries the Ollama server for available models
+        and creates one :class:`OllamaProvider` per installed model.
+
+        Returns
+        -------
+        list[ModelProvider]
+        """
+        providers = ProviderFactory.create_all(**provider_configs)
+
+        # Auto-discover Ollama models
+        if "ollama" in _REGISTRY:
+            try:
+                from d_mmce.providers.ollama_provider import OllamaProvider
+                models = await OllamaProvider.list_local_models()
+                for m in models:
+                    full_name = m.get("name", "")
+                    if full_name:
+                        providers.append(OllamaProvider(model=full_name))
+                        logger.info("Auto-discovered local model: ollama:%s", full_name)
+                if not models:
+                    logger.info("Ollama is running but no models installed.")
+            except Exception:
+                logger.debug("Ollama auto-discovery failed", exc_info=True)
+
         return providers
 

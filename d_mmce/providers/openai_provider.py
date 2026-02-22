@@ -35,11 +35,14 @@ class OpenAIProvider(ModelProvider):
         model: str = "gpt-4o",
         temperature: float = 0.7,
     ) -> None:
-        self._client = openai.AsyncOpenAI(
-            api_key=api_key or os.getenv("OPENAI_API_KEY", ""),
-        )
+        self._api_key = api_key or os.getenv("OPENAI_API_KEY", "")
+        self._client = openai.AsyncOpenAI(api_key=self._api_key)
         self._model = model
         self._temperature = temperature
+
+    async def is_available(self) -> bool:
+        """Check if a valid API key is configured."""
+        return bool(self._api_key and self._api_key.startswith("sk-"))
 
     async def _call(self, prompt: str) -> tuple[str, dict[str, Any]]:
         response = await self._client.chat.completions.create(

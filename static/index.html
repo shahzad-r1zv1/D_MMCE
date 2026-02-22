@@ -1228,7 +1228,7 @@ async function saveSettings() {
   // 4. Capture selected local models (already tracked in state.localModels)
 
   toggleSettings();
-  const selectedLocal = state.localModels.filter(m => m.selected).map(m => m.short_name);
+  const selectedLocal = state.localModels.filter(m => m.selected).map(m => m.short_name || m.name);
   const msg = selectedLocal.length
     ? `Settings saved. ${selectedLocal.length} local model(s) selected.`
     : 'Settings saved.';
@@ -1484,7 +1484,7 @@ async function handleRun() {
   // Gather selected local Ollama models
   const selectedOllamaModels = state.localModels
     .filter(m => m.selected)
-    .map(m => m.short_name || m.name);
+    .map(m => m.name);
 
   const payload = {
     query,

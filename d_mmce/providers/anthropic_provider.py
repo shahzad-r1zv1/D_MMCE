@@ -38,12 +38,17 @@ class AnthropicProvider(ModelProvider):
         temperature: float = 0.7,
         max_tokens: int = 4096,
     ) -> None:
+        self._api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
         self._client = anthropic.AsyncAnthropic(
-            api_key=api_key or os.getenv("ANTHROPIC_API_KEY", ""),
+            api_key=self._api_key if self._api_key else None,
         )
         self._model = model
         self._temperature = temperature
         self._max_tokens = max_tokens
+
+    async def is_available(self) -> bool:
+        """Check if a valid API key is configured."""
+        return bool(self._api_key and len(self._api_key) > 10)
 
     async def _call(self, prompt: str) -> tuple[str, dict[str, Any]]:
         response = await self._client.messages.create(

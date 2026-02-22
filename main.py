@@ -135,7 +135,8 @@ async def _main() -> None:
             except KeyError as e:
                 print(f"WARNING: {e}", file=sys.stderr)
     else:
-        providers = ProviderFactory.create_all()
+        # Auto-discover all providers including local Ollama models
+        providers = await ProviderFactory.create_all_async()
 
     # Add explicitly-selected local Ollama models
     if args.ollama_models:

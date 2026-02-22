@@ -182,7 +182,7 @@ async def run_query(req: QueryRequest):
                 except KeyError:
                     pass
         else:
-            providers = ProviderFactory.create_all()
+            providers = await ProviderFactory.create_all_async()
 
         # Add explicitly-selected Ollama local models
         if req.ollama_models:

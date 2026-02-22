@@ -36,10 +36,16 @@ class GeminiProvider(ModelProvider):
         model: str = "gemini-1.5-pro",
         temperature: float = 0.7,
     ) -> None:
-        genai.configure(api_key=api_key or os.getenv("GOOGLE_API_KEY", ""))
+        self._api_key = api_key or os.getenv("GOOGLE_API_KEY", "")
+        if self._api_key:
+            genai.configure(api_key=self._api_key)
         self._model_name = model
         self._temperature = temperature
         self._model = genai.GenerativeModel(model)
+
+    async def is_available(self) -> bool:
+        """Check if a valid API key is configured."""
+        return bool(self._api_key and len(self._api_key) > 10)
 
     async def _call(self, prompt: str) -> tuple[str, dict[str, Any]]:
         # google-generativeai uses a sync API; run in a thread executor.

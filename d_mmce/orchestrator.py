@@ -93,41 +93,63 @@ class D_MMCE:
             observer = LoggingObserver()
             self._bus.subscribe_all(observer)
 
-        # --- Providers ---
-        if providers is not None:
-            self._providers = list(providers)
-        else:
-            self._providers = ProviderFactory.create_all(
-                **(provider_configs or {})
-            )
+        # --- Providers (may be lazily populated in run()) ---
+        self._providers: list[ModelProvider] = list(providers) if providers else []
+        self._provider_configs = provider_configs or {}
+        self._providers_resolved = providers is not None  # skip auto-discovery if explicit
 
-        if not self._providers:
-            raise RuntimeError(
-                "No providers available. Register at least one provider or "
-                "pass pre-built instances."
-            )
+        # --- Deferred config ---
+        self._review_provider_name = review_provider_name
+        self._embedding_model = embedding_model
+        self._stability_threshold = stability_threshold
+        self._max_stability_reruns = max_stability_reruns
 
-        # --- Review provider ---
+        # --- Eagerly build components if providers were given ---
+        if self._providers:
+            self._build_components()
+
+    def _build_components(self) -> None:
+        """Wire up the pipeline components once providers are resolved."""
         review_provider = next(
-            (p for p in self._providers if p.name == review_provider_name),
+            (p for p in self._providers if p.name == self._review_provider_name),
             self._providers[0],
         )
 
-        # --- Pipeline components ---
         self._perturbator = PromptPerturbator(event_bus=self._bus)
         self._peer_reviewer = PeerReviewer(
             review_provider=review_provider, event_bus=self._bus
         )
         self._clusterer = SemanticClusterer(
-            model_name=embedding_model, event_bus=self._bus
+            model_name=self._embedding_model, event_bus=self._bus
         )
         self._meta_judge = MetaJudge(
             providers=self._providers,
             clusterer=self._clusterer,
-            stability_threshold=stability_threshold,
-            max_reruns=max_stability_reruns,
+            stability_threshold=self._stability_threshold,
+            max_reruns=self._max_stability_reruns,
             event_bus=self._bus,
         )
+
+    async def _ensure_providers(self) -> None:
+        """Auto-discover providers if none were supplied."""
+        if self._providers_resolved:
+            return
+
+        self._providers_resolved = True
+        self._providers = await ProviderFactory.create_all_async(
+            **self._provider_configs
+        )
+
+        if not self._providers:
+            raise RuntimeError(
+                "No providers available.  Either:\n"
+                "  • Set API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY) in .env\n"
+                "  • Start Ollama and pull a model: ollama pull llama3.2\n"
+                "  • Pass providers explicitly to D_MMCE(providers=[...])"
+            )
+
+        logger.info("Auto-discovered providers: %s", [p.name for p in self._providers])
+        self._build_components()
 
     @property
     def event_bus(self) -> EventBus:
@@ -149,9 +171,18 @@ class D_MMCE:
             for p, ok in zip(self._providers, checks)
             if ok is True
         ]
+        unavailable = [
+            p.name
+            for p, ok in zip(self._providers, checks)
+            if ok is not True
+        ]
+        if unavailable:
+            logger.info("Unavailable providers (skipped): %s", unavailable)
         if not available:
-            logger.warning("No providers passed health-check; using all.")
-            return list(self._providers)
+            logger.warning(
+                "No providers passed health-check. "
+                "Set API keys or start Ollama with a pulled model."
+            )
         return available
 
     async def _parallel_inference(
@@ -176,6 +207,7 @@ class D_MMCE:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         responses: list[ModelResponse] = []
+        failures: list[str] = []
         for r in results:
             if isinstance(r, ModelResponse):
                 responses.append(r)
@@ -187,8 +219,18 @@ class D_MMCE:
                             f"({len(r.text)} chars, {r.latency:.2f}s)",
                         )
                     )
-            else:
-                logger.warning("Inference task failed: %s", r)
+            elif isinstance(r, BaseException):
+                err_name = type(r).__name__
+                err_msg = str(r)[:120]
+                failures.append(f"{err_name}: {err_msg}")
+                logger.warning("Inference task failed: %s: %s", err_name, err_msg)
+
+        if failures and not responses:
+            logger.error(
+                "All %d inference tasks failed. Sample errors:\n  %s",
+                len(failures),
+                "\n  ".join(failures[:5]),
+            )
 
         return responses
 
@@ -228,6 +270,9 @@ class D_MMCE:
            Divergence flags the answer as a potential **Local Optimum**.
         """
         audit_trail: list[str] = []
+
+        # 0. Ensure providers are resolved (auto-discovery if needed)
+        await self._ensure_providers()
 
         # 1. Diversity injection
         perturbed = self._perturbator.perturb(query)
