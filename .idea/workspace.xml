@@ -1,15 +1,71 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
   <component name="ChangeListManager">
-    <list default="true" id="aa4bfa3a-2aec-419f-91a2-e791ac932f0f" name="Changes" comment="" />
+    <list default="true" id="aa4bfa3a-2aec-419f-91a2-e791ac932f0f" name="Changes" comment="initial push!">
+      <change afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/meta_judge.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/observer.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/orchestrator.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/peer_reviewer.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/prompt_perturbator.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/providers/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/providers/anthropic_provider.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/providers/base.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/providers/factory.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/providers/gemini_provider.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/providers/ollama_provider.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/providers/openai_provider.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/schemas.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/d_mmce/semantic_clusterer.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/server.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 1
-}]]></component>
+  <component name="CopilotPersistence">
+    <persistenceIdMap>
+      <entry key="_C:/Users/shahz/PycharmProjects/D_MMCE" value="3A1vFzIto4gBlGJFlrO9teTkuJn" />
+    </persistenceIdMap>
+  </component>
+  <component name="CopilotUserSelectedModel">
+    <selectedModels>
+      <entry key="chat-panel" value="Claude Opus 4.6" />
+      <entry key="agent-panel" value="Claude Opus 4.6" />
+    </selectedModels>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;shahzad-r1zv1&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/shahzad-r1zv1/D_MMCE.git&quot;,
+    &quot;accountId&quot;: &quot;f6b9145e-0e03-46fd-8ab3-cdefd0dee7de&quot;
+  }
+}</component>
+  <component name="McpProjectServerCommands">
+    <commands />
+    <urls />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 1
+}</component>
   <component name="ProjectId" id="3A1vFzIto4gBlGJFlrO9teTkuJn" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
@@ -18,10 +74,23 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.MCP Project settings loaded": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "ai.playground.ignore.import.keys.banner.in.settings": "true",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "master",
+    "ignore.virus.scanning.warn.message": "true",
+    "junie.onboarding.icon.badge.shown": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "preferences.pluginManager",
+    "to.speed.mode.migration.done": "true",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -40,11 +109,44 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1771772791946</updated>
-      <workItem from="1771772792929" duration="85000" />
+      <workItem from="1771772792929" duration="1541000" />
+      <workItem from="1771774409678" duration="2657000" />
     </task>
+    <task id="LOCAL-00001" summary="initial push!">
+      <option name="closed" value="true" />
+      <created>1771773305352</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1771773305352</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="initial push!" />
+    <option name="LAST_COMMIT_MESSAGE" value="initial push!" />
+  </component>
+  <component name="github-copilot-workspace">
+    <instructionFileLocations>
+      <option value=".github/instructions" />
+    </instructionFileLocations>
+    <promptFileLocations>
+      <option value=".github/prompts" />
+    </promptFileLocations>
   </component>
 </project>
