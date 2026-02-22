@@ -697,6 +697,74 @@ a:hover { text-decoration: underline; }
 .result-section { display: none; }
 .result-section.active { display: block; }
 
+/* Live model responses */
+.responses-section { display: none; }
+.responses-section.active { display: block; }
+.response-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--space-md);
+}
+.response-card {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+  animation: fade-slide-in .4s ease-out;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  transition: border-color var(--transition-base);
+}
+.response-card:hover { border-color: var(--accent); }
+.response-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+.response-provider {
+  font-weight: 700;
+  font-size: .85rem;
+  color: var(--text-primary);
+}
+.response-variant {
+  font-size: .65rem;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  background: rgba(255,255,255,.06);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 600;
+}
+.response-stats {
+  margin-left: auto;
+  font-size: .7rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.response-text {
+  font-size: .8rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  max-height: 180px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: var(--space-sm);
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+.response-count-badge {
+  font-size: .8rem;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .result-answer {
   background: var(--bg-input);
   border: 1px solid var(--border-color);
@@ -963,6 +1031,20 @@ a:hover { text-decoration: underline; }
   </section>
 
   <!-- ============================================================
+       MODEL RESPONSES (live as they arrive)
+       ============================================================ -->
+  <section class="card responses-section" id="responsesSection" aria-label="Model responses">
+    <div class="card-header">
+      <div class="icon" style="background:var(--accent-glow);color:var(--accent);">🧠</div>
+      <div>
+        <h2>Model Responses <span class="response-count-badge" id="responseCount"></span></h2>
+        <p>Individual outputs from each model × prompt variant, streamed live.</p>
+      </div>
+    </div>
+    <div class="response-grid" id="responseGrid"></div>
+  </section>
+
+  <!-- ============================================================
        RESULT
        ============================================================ -->
   <section class="card result-section" id="resultSection" aria-label="Final result">
@@ -1076,10 +1158,10 @@ a:hover { text-decoration: underline; }
     <div class="setting-group">
       <label for="settingReviewProvider">🛡 Review Provider</label>
       <select class="setting-input" id="settingReviewProvider">
+        <option value="auto" selected>Auto (best available)</option>
         <option value="openai">OpenAI (GPT-4o)</option>
         <option value="anthropic">Anthropic (Claude 3.5)</option>
         <option value="gemini">Google (Gemini 1.5)</option>
-        <option value="ollama">Ollama (Llama 3.1)</option>
       </select>
     </div>
 
@@ -1136,9 +1218,10 @@ const state = {
   ollamaReachable: false,
   isRunning: false,
   eventCount: 0,
+  responseCount: 0,
   startTime: null,
   settings: {
-    review_provider: 'openai',
+    review_provider: 'auto',
     embedding_model: 'all-MiniLM-L6-v2',
     stability_threshold: 0.85,
     max_reruns: 3,
@@ -1156,6 +1239,9 @@ const dom = {
   runBtn:            $('#runBtn'),
   pipelineSection:   $('#pipelineSection'),
   eventFeed:         $('#eventFeed'),
+  responsesSection:  $('#responsesSection'),
+  responseGrid:      $('#responseGrid'),
+  responseCount:     $('#responseCount'),
   resultSection:     $('#resultSection'),
   resultAnswer:      $('#resultAnswer'),
   settingsOverlay:   $('#settingsOverlay'),
@@ -1253,12 +1339,11 @@ async function loadProviders() {
     state.providers = data.providers.map(p => ({ ...p, active: true }));
     renderProviderToggles();
   } catch {
-    // Fallback providers
+    // Fallback providers (ollama is handled by Local LLMs section)
     state.providers = [
       { name: 'openai', available: false, active: true },
       { name: 'anthropic', available: false, active: true },
       { name: 'gemini', available: false, active: true },
-      { name: 'ollama', available: false, active: true },
     ];
     renderProviderToggles();
   }
@@ -1468,12 +1553,16 @@ async function handleRun() {
 
   state.isRunning = true;
   state.eventCount = 0;
+  state.responseCount = 0;
   state.startTime = performance.now();
 
   // UI updates
   dom.runBtn.classList.add('loading');
   dom.runBtn.disabled = true;
   dom.pipelineSection.classList.add('active');
+  dom.responsesSection.classList.remove('active');
+  dom.responseGrid.innerHTML = '';
+  dom.responseCount.textContent = '';
   dom.resultSection.classList.remove('active');
   dom.eventFeed.innerHTML = '';
   resetStages();
@@ -1544,6 +1633,11 @@ function processEvent(evt) {
   // Add to feed
   addEvent(type, message);
 
+  // Render model response card
+  if (type === 'MODEL_RESPONSE' && payload && payload.text) {
+    addResponseCard(payload);
+  }
+
   // Handle terminal events
   if (type === 'PIPELINE_COMPLETE' && payload) {
     completeAllStages();
@@ -1551,6 +1645,44 @@ function processEvent(evt) {
   }
   if (type === 'PIPELINE_ERROR' || type === 'ERROR') {
     toast(message, 'error');
+  }
+}
+
+/* ----------------------------------------------------------------
+   LIVE MODEL RESPONSE CARDS
+   ---------------------------------------------------------------- */
+function addResponseCard(data) {
+  // Show the section on first response
+  if (!dom.responsesSection.classList.contains('active')) {
+    dom.responsesSection.classList.add('active');
+  }
+
+  state.responseCount++;
+  dom.responseCount.textContent = `(${state.responseCount})`;
+
+  const providerIcons = {
+    openai: '🤖', anthropic: '🧬', gemini: '💎',
+  };
+  // Match ollama:* providers
+  const providerName = data.provider || 'unknown';
+  const icon = providerName.startsWith('ollama') ? '🦙' : (providerIcons[providerName] || '🔌');
+
+  const card = document.createElement('div');
+  card.className = 'response-card';
+  card.innerHTML = `
+    <div class="response-card-header">
+      <span style="font-size:1.1rem">${icon}</span>
+      <span class="response-provider">${escapeHtml(providerName)}</span>
+      <span class="response-variant">${escapeHtml(data.variant || 'original')}</span>
+      <span class="response-stats">${data.chars} chars · ${data.latency}s</span>
+    </div>
+    <div class="response-text">${escapeHtml(data.text)}</div>
+  `;
+  dom.responseGrid.appendChild(card);
+
+  // Scroll the section into view on first few responses
+  if (state.responseCount <= 2) {
+    dom.responsesSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
 

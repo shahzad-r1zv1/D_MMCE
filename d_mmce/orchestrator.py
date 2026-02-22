@@ -81,7 +81,7 @@ class D_MMCE:
         self,
         providers: Sequence[ModelProvider] | None = None,
         provider_configs: dict[str, dict[str, Any]] | None = None,
-        review_provider_name: str = "openai",
+        review_provider_name: str = "auto",
         embedding_model: str = "all-MiniLM-L6-v2",
         stability_threshold: float = 0.85,
         max_stability_reruns: int = 3,
@@ -110,10 +110,13 @@ class D_MMCE:
 
     def _build_components(self) -> None:
         """Wire up the pipeline components once providers are resolved."""
-        review_provider = next(
-            (p for p in self._providers if p.name == self._review_provider_name),
-            self._providers[0],
-        )
+        if self._review_provider_name == "auto":
+            review_provider = self._providers[0]
+        else:
+            review_provider = next(
+                (p for p in self._providers if p.name == self._review_provider_name),
+                self._providers[0],
+            )
 
         self._perturbator = PromptPerturbator(event_bus=self._bus)
         self._peer_reviewer = PeerReviewer(
@@ -193,7 +196,9 @@ class D_MMCE:
         """Fan out all (provider × variant) calls via ``asyncio.gather()``.
 
         This is the core async orchestration step.  For *P* providers and
-        *V* variants, it launches *P × V* concurrent tasks.
+        *V* variants, it launches *P × V* concurrent tasks.  Events are
+        published **as each task completes** so the UI can stream responses
+        live rather than waiting for the slowest model.
         """
         tasks: list[asyncio.Task[ModelResponse]] = []
         for provider in providers:
@@ -204,12 +209,12 @@ class D_MMCE:
                     )
                 )
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
         responses: list[ModelResponse] = []
         failures: list[str] = []
-        for r in results:
-            if isinstance(r, ModelResponse):
+
+        for coro in asyncio.as_completed(tasks):
+            try:
+                r = await coro
                 responses.append(r)
                 if self._bus:
                     self._bus.publish(
@@ -217,11 +222,18 @@ class D_MMCE:
                             EventType.MODEL_RESPONSE,
                             message=f"Got response from {r.provider_name}::{r.prompt_variant} "
                             f"({len(r.text)} chars, {r.latency:.2f}s)",
+                            payload={
+                                "provider": r.provider_name,
+                                "variant": r.prompt_variant,
+                                "text": r.text,
+                                "latency": round(r.latency, 2),
+                                "chars": len(r.text),
+                            },
                         )
                     )
-            elif isinstance(r, BaseException):
-                err_name = type(r).__name__
-                err_msg = str(r)[:120]
+            except Exception as exc:
+                err_name = type(exc).__name__
+                err_msg = str(exc)[:120]
                 failures.append(f"{err_name}: {err_msg}")
                 logger.warning("Inference task failed: %s: %s", err_name, err_msg)
 
@@ -283,6 +295,35 @@ class D_MMCE:
         providers = await self._filter_available()
         audit_trail.append(
             f"Available providers: {[p.name for p in providers]}"
+        )
+
+        if not providers:
+            return FinalVerdict(
+                answer="ERROR: No providers available. Configure API keys or start Ollama.",
+                stability_score=0.0,
+                audit_trail=audit_trail,
+            )
+
+        # Rebuild peer-reviewer and meta-judge with only available providers
+        # so the Meta-Judge never picks an unreachable model.
+        if self._review_provider_name == "auto":
+            review_provider = providers[0]
+        else:
+            review_provider = next(
+                (p for p in providers if p.name == self._review_provider_name),
+                providers[0],
+            )
+        logger.info("Review provider: %s | Meta-Judge pool: %s",
+                     review_provider.name, [p.name for p in providers])
+        self._peer_reviewer = PeerReviewer(
+            review_provider=review_provider, event_bus=self._bus
+        )
+        self._meta_judge = MetaJudge(
+            providers=providers,
+            clusterer=self._clusterer,
+            stability_threshold=self._stability_threshold,
+            max_reruns=self._max_stability_reruns,
+            event_bus=self._bus,
         )
 
         # 3. Parallel inference via asyncio.gather()

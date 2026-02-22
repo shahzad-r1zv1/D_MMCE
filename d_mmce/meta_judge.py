@@ -125,6 +125,7 @@ class MetaJudge:
         self._stability_threshold = stability_threshold
         self._max_reruns = max_reruns
         self._bus = event_bus
+        logger.info("MetaJudge initialised with providers: %s", list(self._providers.keys()))
 
     def _select_judge(self, matrix: ContradictionMatrix) -> ModelProvider:
         """Pick the provider with the lowest average penalty."""

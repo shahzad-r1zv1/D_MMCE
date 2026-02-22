@@ -68,8 +68,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--review-provider",
         type=str,
-        default="openai",
-        help="Provider used for peer reviews (default: openai).",
+        default="auto",
+        help="Provider used for peer reviews (default: auto = best available).",
     )
     parser.add_argument(
         "--embedding-model",

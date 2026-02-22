@@ -36,12 +36,20 @@ from d_mmce.providers.ollama_provider import OllamaProvider
 # ------------------------------------------------------------------ #
 #  Logging
 # ------------------------------------------------------------------ #
+LOG_FILE = Path(__file__).parent / "d_mmce.log"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
-    datefmt="%H:%M:%S",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+    ],
 )
 logger = logging.getLogger("d_mmce.server")
+logger.info("=" * 60)
+logger.info("D-MMCE server starting — log file: %s", LOG_FILE)
 
 # ------------------------------------------------------------------ #
 #  FastAPI app
@@ -57,7 +65,7 @@ class QueryRequest(BaseModel):
     query: str
     providers: list[str] | None = None
     ollama_models: list[str] | None = None  # e.g. ["mistral", "codellama:13b"]
-    review_provider: str = "openai"
+    review_provider: str = "auto"
     embedding_model: str = "all-MiniLM-L6-v2"
     stability_threshold: float = 0.85
     max_reruns: int = 3
@@ -91,10 +99,16 @@ async def index():
 
 @app.get("/api/providers")
 async def list_providers():
-    """Return all registered providers with availability status."""
+    """Return registered cloud providers with availability status.
+
+    The base ``ollama`` entry is excluded because local models are
+    managed via ``/api/ollama/models`` and the Local-LLM picker in the UI.
+    """
     names = ProviderFactory.available_names()
     statuses = []
     for name in names:
+        if name == "ollama":
+            continue  # handled by /api/ollama/models
         try:
             p = ProviderFactory.create(name)
             avail = await p.is_available()
@@ -166,30 +180,58 @@ async def run_query(req: QueryRequest):
         events_queue: asyncio.Queue[dict] = asyncio.Queue()
 
         def on_event(event: Event):
-            events_queue.put_nowait({
+            event_data = {
                 "type": event.event_type.name,
                 "message": event.message,
                 "payload": event.payload,
                 "timestamp": time.time(),
-            })
+            }
+            logger.debug("Pipeline event: %s — %s", event.event_type.name, event.message)
+            events_queue.put_nowait(event_data)
+
+        logger.info("=== NEW RUN === query=%r providers=%s ollama_models=%s review=%s",
+                     req.query[:80], req.providers, req.ollama_models, req.review_provider)
 
         # Build providers
         if req.providers:
             providers = []
             for name in req.providers:
+                if name == "ollama":
+                    logger.info("Skipping raw 'ollama' — local models handled via ollama_models")
+                    continue
                 try:
-                    providers.append(ProviderFactory.create(name))
+                    p = ProviderFactory.create(name)
+                    logger.info("Created provider: %s (type=%s)", p.name, type(p).__name__)
+                    providers.append(p)
                 except KeyError:
-                    pass
+                    logger.warning("Unknown provider name: %s", name)
         else:
             providers = await ProviderFactory.create_all_async()
+            logger.info("Auto-discovered providers: %s", [p.name for p in providers])
 
         # Add explicitly-selected Ollama local models
         if req.ollama_models:
             for model_tag in req.ollama_models:
                 tag = model_tag.strip()
                 if tag:
-                    providers.append(OllamaProvider(model=tag))
+                    p = OllamaProvider(model=tag)
+                    logger.info("Added Ollama model: %s", p.name)
+                    providers.append(p)
+
+        # Filter to only available providers before creating the engine
+        logger.info("Pre-filter provider list: %s", [p.name for p in providers])
+        avail_checks = await asyncio.gather(
+            *(p.is_available() for p in providers), return_exceptions=True
+        )
+        for p, ok in zip(providers, avail_checks):
+            logger.info("  %s → is_available=%s", p.name, ok)
+        skipped = [p.name for p, ok in zip(providers, avail_checks) if ok is not True]
+        providers = [
+            p for p, ok in zip(providers, avail_checks) if ok is True
+        ]
+        if skipped:
+            logger.info("Skipped unavailable: %s", skipped)
+        logger.info("Final provider list for engine: %s", [p.name for p in providers])
 
         if not providers:
             yield f"data: {json.dumps({'type': 'ERROR', 'message': 'No providers available.'})}\n\n"
