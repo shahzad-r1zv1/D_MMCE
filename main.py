@@ -27,6 +27,7 @@ load_dotenv()  # Load .env file if present
 
 from d_mmce.orchestrator import D_MMCE
 from d_mmce.providers import ProviderFactory
+from d_mmce.providers.ollama_provider import OllamaProvider
 from d_mmce.schemas import FinalVerdict
 
 
@@ -38,6 +39,8 @@ def _parse_args() -> argparse.Namespace:
             Examples:
               python main.py "What is photosynthesis?"
               python main.py --providers openai,anthropic "Explain gravity"
+              python main.py --ollama-model mistral "Summarise quantum computing"
+              python main.py --ollama-model mistral --ollama-model phi3 "Compare ML frameworks"
               python main.py --stability-threshold 0.9 --max-reruns 5 "Is P=NP?"
         """),
     )
@@ -46,7 +49,21 @@ def _parse_args() -> argparse.Namespace:
         "--providers",
         type=str,
         default=None,
-        help="Comma-separated list of provider names to use (default: all registered).",
+        help=(
+            "Comma-separated list of provider names to use (default: all registered). "
+            "Use 'ollama:modelname' to target a specific local model."
+        ),
+    )
+    parser.add_argument(
+        "--ollama-model",
+        type=str,
+        action="append",
+        default=None,
+        dest="ollama_models",
+        help=(
+            "Add a local Ollama model to the pool.  Can be repeated "
+            "(e.g. --ollama-model mistral --ollama-model phi3)."
+        ),
     )
     parser.add_argument(
         "--review-provider",
@@ -119,6 +136,14 @@ async def _main() -> None:
                 print(f"WARNING: {e}", file=sys.stderr)
     else:
         providers = ProviderFactory.create_all()
+
+    # Add explicitly-selected local Ollama models
+    if args.ollama_models:
+        for model_tag in args.ollama_models:
+            tag = model_tag.strip()
+            if tag:
+                providers.append(OllamaProvider(model=tag))
+                print(f"Added local model: ollama:{tag}")
 
     if not providers:
         print(

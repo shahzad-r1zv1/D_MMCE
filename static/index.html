@@ -499,6 +499,99 @@ a:hover { text-decoration: underline; }
   margin: var(--space-sm) 0;
 }
 
+/* Local LLM picker */
+.local-llm-section { display: flex; flex-direction: column; gap: var(--space-sm); }
+.ollama-status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: .8rem;
+}
+.ollama-status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ollama-status-dot.online  { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.ollama-status-dot.offline { background: var(--danger); }
+.ollama-status-bar .status-text { color: var(--text-secondary); flex: 1; }
+.ollama-status-bar .refresh-btn {
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: 1rem; padding: 2px 4px; border-radius: var(--radius-sm);
+  transition: color var(--transition-fast), transform var(--transition-fast);
+}
+.ollama-status-bar .refresh-btn:hover { color: var(--accent); transform: rotate(90deg); }
+
+.local-model-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: var(--space-xs);
+}
+.local-model-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--bg-card);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  user-select: none;
+}
+.local-model-card:hover { border-color: var(--text-muted); background: var(--bg-card-hover); }
+.local-model-card.selected {
+  border-color: var(--info);
+  background: var(--info-bg);
+}
+.local-model-card .model-check {
+  width: 16px; height: 16px;
+  border: 2px solid var(--text-muted);
+  border-radius: 3px;
+  flex-shrink: 0;
+  display: grid; place-items: center;
+  font-size: .65rem; color: transparent;
+  transition: all var(--transition-fast);
+}
+.local-model-card.selected .model-check {
+  background: var(--info);
+  border-color: var(--info);
+  color: #fff;
+}
+.local-model-card .model-info { flex: 1; min-width: 0; }
+.local-model-card .model-name {
+  font-size: .85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.local-model-card .model-meta {
+  font-size: .7rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+.local-model-card .model-meta .tag {
+  padding: 1px 5px;
+  background: rgba(255,255,255,.05);
+  border-radius: var(--radius-sm);
+}
+.local-model-empty {
+  text-align: center;
+  padding: var(--space-lg);
+  color: var(--text-muted);
+  font-size: .85rem;
+}
+
 /* ================================================================
    PIPELINE VISUALIZER
    ================================================================ */
@@ -964,6 +1057,21 @@ a:hover { text-decoration: underline; }
 
     <hr class="settings-divider">
 
+    <!-- Local LLMs (Ollama) -->
+    <div class="setting-group local-llm-section">
+      <label>🦙 Local LLMs <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:.75rem;color:var(--text-muted)">(via Ollama)</span></label>
+      <div class="ollama-status-bar">
+        <span class="ollama-status-dot" id="ollamaStatusDot"></span>
+        <span class="status-text" id="ollamaStatusText">Checking Ollama…</span>
+        <button class="refresh-btn" onclick="refreshOllamaModels()" title="Refresh models" aria-label="Refresh Ollama models">⟳</button>
+      </div>
+      <div class="local-model-grid" id="localModelGrid">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <hr class="settings-divider">
+
     <!-- Review provider -->
     <div class="setting-group">
       <label for="settingReviewProvider">🛡 Review Provider</label>
@@ -1024,6 +1132,8 @@ a:hover { text-decoration: underline; }
    ---------------------------------------------------------------- */
 const state = {
   providers: [],           // [{name, available, active}]
+  localModels: [],         // [{name, short_name, size, parameter_size, quantization, family, selected}]
+  ollamaReachable: false,
   isRunning: false,
   eventCount: 0,
   startTime: null,
@@ -1076,6 +1186,9 @@ async function loadSettings() {
     $('#settingAnthropic').placeholder = data.anthropic_api_key || 'sk-ant-...';
     $('#settingGoogle').placeholder = data.google_api_key || 'AI...';
   } catch { /* ignore */ }
+
+  // Also refresh Ollama models
+  refreshOllamaModels();
 }
 
 async function saveSettings() {
@@ -1112,8 +1225,14 @@ async function saveSettings() {
     if (el) p.active = el.classList.contains('active');
   });
 
+  // 4. Capture selected local models (already tracked in state.localModels)
+
   toggleSettings();
-  toast('Settings saved.', 'success');
+  const selectedLocal = state.localModels.filter(m => m.selected).map(m => m.short_name);
+  const msg = selectedLocal.length
+    ? `Settings saved. ${selectedLocal.length} local model(s) selected.`
+    : 'Settings saved.';
+  toast(msg, 'success');
 }
 
 /* Slider labels */
@@ -1161,6 +1280,95 @@ function toggleProvider(name) {
   const p = state.providers.find(x => x.name === name);
   if (p) p.active = !p.active;
   renderProviderToggles();
+}
+
+/* ----------------------------------------------------------------
+   LOCAL LLM (OLLAMA) DISCOVERY
+   ---------------------------------------------------------------- */
+async function refreshOllamaModels() {
+  const dot = $('#ollamaStatusDot');
+  const txt = $('#ollamaStatusText');
+  const grid = $('#localModelGrid');
+
+  dot.className = 'ollama-status-dot';
+  txt.textContent = 'Checking Ollama…';
+
+  try {
+    const res = await fetch('/api/ollama/models');
+    const data = await res.json();
+
+    state.ollamaReachable = data.reachable;
+
+    if (!data.reachable) {
+      dot.classList.add('offline');
+      txt.textContent = 'Ollama server not reachable';
+      grid.innerHTML = `
+        <div class="local-model-empty">
+          <div style="font-size:1.5rem;margin-bottom:.5rem">🔌</div>
+          Ollama is not running.<br>
+          <span style="font-size:.75rem">Start it with <code style="background:var(--bg-input);padding:2px 6px;border-radius:3px">ollama serve</code> and click ⟳</span>
+        </div>`;
+      return;
+    }
+
+    dot.classList.add('online');
+    txt.textContent = `${data.models.length} model${data.models.length !== 1 ? 's' : ''} available`;
+
+    // Preserve previous selections
+    const prevSelected = new Set(state.localModels.filter(m => m.selected).map(m => m.name));
+
+    state.localModels = data.models.map(m => ({
+      ...m,
+      selected: prevSelected.has(m.name),
+    }));
+
+    renderLocalModels();
+  } catch {
+    dot.classList.add('offline');
+    txt.textContent = 'Failed to reach Ollama';
+    grid.innerHTML = `<div class="local-model-empty">Could not connect to Ollama server.</div>`;
+  }
+}
+
+function renderLocalModels() {
+  const grid = $('#localModelGrid');
+
+  if (!state.localModels.length) {
+    grid.innerHTML = `
+      <div class="local-model-empty">
+        <div style="font-size:1.5rem;margin-bottom:.5rem">📦</div>
+        No models installed.<br>
+        <span style="font-size:.75rem">Run <code style="background:var(--bg-input);padding:2px 6px;border-radius:3px">ollama pull mistral</code> to get started</span>
+      </div>`;
+    return;
+  }
+
+  grid.innerHTML = state.localModels.map((m, i) => {
+    const sizeGB = m.size ? (m.size / 1e9).toFixed(1) + ' GB' : '';
+    return `
+      <div class="local-model-card ${m.selected ? 'selected' : ''}"
+           onclick="toggleLocalModel(${i})"
+           role="checkbox" aria-checked="${m.selected}" tabindex="0"
+           title="${m.name}">
+        <span class="model-check">✓</span>
+        <div class="model-info">
+          <div class="model-name">🦙 ${escapeHtml(m.short_name || m.name)}</div>
+          <div class="model-meta">
+            ${m.parameter_size ? `<span class="tag">${m.parameter_size}</span>` : ''}
+            ${m.quantization ? `<span class="tag">${m.quantization}</span>` : ''}
+            ${m.family ? `<span class="tag">${m.family}</span>` : ''}
+            ${sizeGB ? `<span class="tag">${sizeGB}</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function toggleLocalModel(index) {
+  if (index >= 0 && index < state.localModels.length) {
+    state.localModels[index].selected = !state.localModels[index].selected;
+    renderLocalModels();
+  }
 }
 
 /* ----------------------------------------------------------------
@@ -1273,9 +1481,15 @@ async function handleRun() {
   // Gather active providers
   const activeProviders = state.providers.filter(p => p.active).map(p => p.name);
 
+  // Gather selected local Ollama models
+  const selectedOllamaModels = state.localModels
+    .filter(m => m.selected)
+    .map(m => m.short_name || m.name);
+
   const payload = {
     query,
     providers: activeProviders.length ? activeProviders : null,
+    ollama_models: selectedOllamaModels.length ? selectedOllamaModels : null,
     review_provider: state.settings.review_provider,
     embedding_model: state.settings.embedding_model,
     stability_threshold: state.settings.stability_threshold,
@@ -1437,6 +1651,7 @@ document.addEventListener('keydown', (e) => {
    ---------------------------------------------------------------- */
 document.addEventListener('DOMContentLoaded', () => {
   loadProviders();
+  refreshOllamaModels();
 });
 </script>
 </body>

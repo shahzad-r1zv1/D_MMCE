@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from d_mmce.observer import Event
 from d_mmce.orchestrator import D_MMCE
 from d_mmce.providers import ProviderFactory
+from d_mmce.providers.ollama_provider import OllamaProvider
 
 # ------------------------------------------------------------------ #
 #  Logging
@@ -55,6 +56,7 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 class QueryRequest(BaseModel):
     query: str
     providers: list[str] | None = None
+    ollama_models: list[str] | None = None  # e.g. ["mistral", "codellama:13b"]
     review_provider: str = "openai"
     embedding_model: str = "all-MiniLM-L6-v2"
     stability_threshold: float = 0.85
@@ -100,6 +102,27 @@ async def list_providers():
             avail = False
         statuses.append({"name": name, "available": avail})
     return {"providers": statuses}
+
+
+@app.get("/api/ollama/status")
+async def ollama_status():
+    """Check if the Ollama server is reachable."""
+    reachable = await OllamaProvider.server_reachable()
+    return {"reachable": reachable}
+
+
+@app.get("/api/ollama/models")
+async def list_ollama_models():
+    """Return all models available on the local Ollama instance.
+
+    Each model includes name, parameter count, quantization, and family.
+    """
+    reachable = await OllamaProvider.server_reachable()
+    if not reachable:
+        return {"reachable": False, "models": []}
+
+    models = await OllamaProvider.list_local_models()
+    return {"reachable": True, "models": models}
 
 
 @app.get("/api/settings")
@@ -160,6 +183,13 @@ async def run_query(req: QueryRequest):
                     pass
         else:
             providers = ProviderFactory.create_all()
+
+        # Add explicitly-selected Ollama local models
+        if req.ollama_models:
+            for model_tag in req.ollama_models:
+                tag = model_tag.strip()
+                if tag:
+                    providers.append(OllamaProvider(model=tag))
 
         if not providers:
             yield f"data: {json.dumps({'type': 'ERROR', 'message': 'No providers available.'})}\n\n"

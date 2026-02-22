@@ -15,7 +15,7 @@
 <img src="https://img.shields.io/badge/OpenAI-GPT--4o-412991?style=for-the-badge&logo=openai&logoColor=white" alt="OpenAI">
 <img src="https://img.shields.io/badge/Anthropic-Claude_3.5-D4A574?style=for-the-badge" alt="Anthropic">
 <img src="https://img.shields.io/badge/Google-Gemini_1.5-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Google">
-<img src="https://img.shields.io/badge/Ollama-Llama_3.1-000000?style=for-the-badge" alt="Ollama">
+<img src="https://img.shields.io/badge/Ollama-Any_Local_LLM-000000?style=for-the-badge" alt="Ollama">
 
 ---
 
@@ -42,8 +42,8 @@ A single LLM can hallucinate, overfit to its training bias, or land on a **Local
          ▼
 ┌─────────────────────┐
 │   Model Pool        │  → asyncio.gather() fans out P × 4 concurrent API calls
-│  GPT-4o │ Claude    │    across OpenAI, Anthropic, Gemini, and Ollama
-│  Gemini │ Llama 3.1 │
+│  GPT-4o │ Claude    │    across OpenAI, Anthropic, Gemini, and any local
+│  Gemini │ Ollama *  │    Ollama models (Llama, Mistral, Phi, Codellama…)
 └────────┬────────────┘
          │
          ▼
@@ -103,7 +103,7 @@ D_MMCE/
         ├── openai_provider.py       # GPT-4o wrapper
         ├── anthropic_provider.py    # Claude 3.5 Sonnet wrapper
         ├── gemini_provider.py       # Gemini 1.5 Pro wrapper
-        └── ollama_provider.py       # Llama 3.1 via local Ollama HTTP
+        └── ollama_provider.py       # Any local model via Ollama HTTP
 ```
 
 ### Design Patterns
@@ -161,14 +161,82 @@ python server.py
 The web UI provides:
 - ⚡ **Real-time pipeline visualization** — watch events stream from each stage
 - ⚙ **Settings panel** — configure API keys, toggle providers, tune stability threshold & max re-runs
+- 🦙 **Local LLM picker** — auto-discovers all models installed in Ollama and lets you select any combination
 - 📊 **Stability gauge** — visual indicator of convergence quality
 - 📋 **Audit trail** — full transparency into every pipeline decision
+
+## Using Local LLMs (Ollama)
+
+D-MMCE can use **any model** installed on your local [Ollama](https://ollama.com) instance — Llama 3.1, Mistral, Phi, CodeLlama, Gemma, Qwen, DeepSeek, or any other. Multiple local models can participate in the ensemble simultaneously, each registered as a distinct provider (`ollama:mistral`, `ollama:phi3`, etc.).
+
+### Setup
+
+```bash
+# 1. Install Ollama (https://ollama.com/download)
+# 2. Pull any models you want to use
+ollama pull llama3.1
+ollama pull mistral
+ollama pull phi3
+ollama pull codellama
+
+# 3. Ensure the server is running
+ollama serve
+```
+
+### CLI usage
+
+```bash
+# Add one local model alongside cloud providers
+python main.py --ollama-model mistral "Explain transformers"
+
+# Add multiple local models (each becomes a separate ensemble member)
+python main.py --ollama-model mistral --ollama-model phi3 "Compare sorting algorithms"
+
+# Use ONLY local models (no cloud APIs needed)
+python main.py --providers ollama:mistral --ollama-model phi3 --ollama-model codellama "Write a merge sort"
+
+# Use the ollama:model shorthand in --providers
+python main.py --providers openai,ollama:mistral "What is dark matter?"
+```
+
+### Web UI usage
+
+1. Open Settings (⚙ button)
+2. Scroll to the **🦙 Local LLMs** section
+3. The UI auto-discovers all models installed on your Ollama server
+4. Click to select/deselect any model — selected models join the ensemble alongside cloud providers
+5. Hit **Save Settings** and run your query
+
+### Programmatic usage
+
+```python
+from d_mmce import D_MMCE
+from d_mmce.providers.ollama_provider import OllamaProvider
+
+# Create providers for specific local models
+mistral = OllamaProvider(model="mistral")
+phi3    = OllamaProvider(model="phi3")
+
+engine = D_MMCE(providers=[mistral, phi3])
+verdict = await engine.run("Explain gradient descent")
+```
+
+### List available models
+
+```python
+from d_mmce.providers.ollama_provider import OllamaProvider
+
+models = await OllamaProvider.list_local_models()
+for m in models:
+    print(f"{m['short_name']:20s}  {m['parameter_size']:>5s}  {m['quantization']}")
+```
 
 ## CLI Options
 
 | Flag | Default | Description |
 |---|---|---|
-| `--providers` | all registered | Comma-separated list of providers to use |
+| `--providers` | all registered | Comma-separated list of providers (`ollama:model` syntax supported) |
+| `--ollama-model` | — | Add a local Ollama model; can be repeated for multiple models |
 | `--review-provider` | `openai` | Model used for peer review critiques |
 | `--embedding-model` | `all-MiniLM-L6-v2` | sentence-transformers model for clustering |
 | `--stability-threshold` | `0.85` | Cosine similarity required for convergence |

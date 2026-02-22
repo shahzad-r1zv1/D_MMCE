@@ -42,11 +42,23 @@ class ProviderFactory:
     def create(name: str, **kwargs: Any) -> ModelProvider:
         """Instantiate a registered provider.
 
+        Supports the ``ollama:<model_tag>`` shorthand — e.g.
+        ``ProviderFactory.create("ollama:mistral")`` creates an
+        :class:`OllamaProvider` targeting the ``mistral`` model.
+
         Raises
         ------
         KeyError
-            If *name* has not been registered.
+            If *name* has not been registered (and is not an ``ollama:``
+            prefixed shorthand).
         """
+        # Handle "ollama:<model>" shorthand
+        if name.startswith("ollama:") and "ollama" in _REGISTRY:
+            model_tag = name[len("ollama:"):]
+            if model_tag:
+                kwargs.setdefault("model", model_tag)
+                return _REGISTRY["ollama"](**kwargs)
+
         if name not in _REGISTRY:
             raise KeyError(
                 f"Unknown provider '{name}'. "
