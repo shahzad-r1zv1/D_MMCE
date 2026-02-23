@@ -4,20 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="aa4bfa3a-2aec-419f-91a2-e791ac932f0f" name="Changes" comment="fixed local llm connectivity2">
-      <change afterPath="$PROJECT_DIR$/d_mmce/history.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_features.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+    <list default="true" id="aa4bfa3a-2aec-419f-91a2-e791ac932f0f" name="Changes" comment="added history and streaming">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/d_mmce/observer.py" beforeDir="false" afterPath="$PROJECT_DIR$/d_mmce/observer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/d_mmce/orchestrator.py" beforeDir="false" afterPath="$PROJECT_DIR$/d_mmce/orchestrator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/d_mmce/providers/base.py" beforeDir="false" afterPath="$PROJECT_DIR$/d_mmce/providers/base.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/d_mmce/providers/ollama_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/d_mmce/providers/ollama_provider.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server.py" beforeDir="false" afterPath="$PROJECT_DIR$/server.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/static/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/conftest.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/conftest.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -134,7 +122,7 @@
       <option name="presentableId" value="Default" />
       <updated>1771772791946</updated>
       <workItem from="1771772792929" duration="1541000" />
-      <workItem from="1771774409678" duration="13287000" />
+      <workItem from="1771774409678" duration="13874000" />
     </task>
     <task id="LOCAL-00001" summary="initial push!">
       <option name="closed" value="true" />
@@ -200,7 +188,15 @@
       <option name="project" value="LOCAL" />
       <updated>1771823460380</updated>
     </task>
-    <option name="localTasksCounter" value="9" />
+    <task id="LOCAL-00009" summary="added history and streaming">
+      <option name="closed" value="true" />
+      <created>1771825061715</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1771825061715</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -223,7 +219,8 @@
     <MESSAGE value="front end and local" />
     <MESSAGE value="fixed local llm connectivity" />
     <MESSAGE value="fixed local llm connectivity2" />
-    <option name="LAST_COMMIT_MESSAGE" value="fixed local llm connectivity2" />
+    <MESSAGE value="added history and streaming" />
+    <option name="LAST_COMMIT_MESSAGE" value="added history and streaming" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/D_MMCE$python_server_py.coverage" NAME="python server.py Coverage Results" MODIFIED="1771777975597" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
