@@ -365,6 +365,12 @@ class D_MMCE:
                         f"Final verdict: stability={verdict.stability_score:.4f}, "
                         f"reruns={verdict.num_reruns}"
                     ),
+                    payload={
+                        "answer": verdict.answer,
+                        "stability_score": verdict.stability_score,
+                        "num_reruns": verdict.num_reruns,
+                        "audit_trail": verdict.audit_trail,
+                    },
                 )
             )
 

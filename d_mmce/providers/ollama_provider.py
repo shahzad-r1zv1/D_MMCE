@@ -48,14 +48,15 @@ class OllamaProvider(ModelProvider):
         Model tag to use (default ``"llama3.1"``).  Any tag that appears
         in ``ollama list`` is valid.
     timeout : float
-        Request timeout in seconds (default ``120``).
+        Request timeout in seconds (default ``300``).  Large models
+        (e.g. 20B+) can take several minutes per generation.
     """
 
     def __init__(
         self,
         base_url: str | None = None,
         model: str = "llama3.1",
-        timeout: float = 120.0,
+        timeout: float = 300.0,
     ) -> None:
         self._base_url = base_url or _ollama_base_url()
         self._model = model

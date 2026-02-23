@@ -180,13 +180,29 @@ async def run_query(req: QueryRequest):
         events_queue: asyncio.Queue[dict] = asyncio.Queue()
 
         def on_event(event: Event):
+            # Ensure payload is JSON-serializable (convert any non-standard types)
+            payload = event.payload or {}
+            try:
+                json.dumps(payload)  # test serialization
+            except (TypeError, ValueError):
+                payload = {k: str(v) for k, v in payload.items()}
+
             event_data = {
                 "type": event.event_type.name,
                 "message": event.message,
-                "payload": event.payload,
+                "payload": payload,
                 "timestamp": time.time(),
             }
-            logger.debug("Pipeline event: %s — %s", event.event_type.name, event.message)
+            if event.event_type.name == "MODEL_RESPONSE":
+                logger.info("MODEL_RESPONSE: provider=%s variant=%s text_len=%d",
+                            payload.get("provider", "?"), payload.get("variant", "?"),
+                            len(payload.get("text", "")))
+            elif event.event_type.name == "FINAL_VERDICT":
+                logger.info("FINAL_VERDICT: answer_len=%d stability=%.4f",
+                            len(payload.get("answer", "")),
+                            payload.get("stability_score", 0))
+            else:
+                logger.info("Event: %s — %s", event.event_type.name, event.message[:100])
             events_queue.put_nowait(event_data)
 
         logger.info("=== NEW RUN === query=%r providers=%s ollama_models=%s review=%s",
@@ -209,14 +225,19 @@ async def run_query(req: QueryRequest):
             providers = await ProviderFactory.create_all_async()
             logger.info("Auto-discovered providers: %s", [p.name for p in providers])
 
-        # Add explicitly-selected Ollama local models
+        # Add explicitly-selected Ollama local models (skip duplicates)
         if req.ollama_models:
+            existing_names = {p.name for p in providers}
             for model_tag in req.ollama_models:
                 tag = model_tag.strip()
                 if tag:
                     p = OllamaProvider(model=tag)
-                    logger.info("Added Ollama model: %s", p.name)
-                    providers.append(p)
+                    if p.name not in existing_names:
+                        logger.info("Added Ollama model: %s", p.name)
+                        providers.append(p)
+                        existing_names.add(p.name)
+                    else:
+                        logger.debug("Skipping duplicate Ollama model: %s", p.name)
 
         # Filter to only available providers before creating the engine
         logger.info("Pre-filter provider list: %s", [p.name for p in providers])
@@ -264,8 +285,11 @@ async def run_query(req: QueryRequest):
                     "num_reruns": verdict.num_reruns,
                     "audit_trail": verdict.audit_trail,
                 }
+                logger.info("Pipeline completed: stability=%.4f, reruns=%d, answer_len=%d",
+                            verdict.stability_score, verdict.num_reruns, len(verdict.answer))
             except Exception as e:
-                result_holder["error"] = str(e)
+                logger.error("Pipeline _run() failed: %s: %s", type(e).__name__, str(e), exc_info=True)
+                result_holder["error"] = f"{type(e).__name__}: {str(e)}"
 
         task = asyncio.create_task(_run())
 
@@ -273,7 +297,12 @@ async def run_query(req: QueryRequest):
         while not task.done() or not events_queue.empty():
             try:
                 event_data = await asyncio.wait_for(events_queue.get(), timeout=0.5)
-                yield f"data: {json.dumps(event_data)}\n\n"
+                try:
+                    yield f"data: {json.dumps(event_data)}\n\n"
+                except (TypeError, ValueError) as json_err:
+                    logger.warning("Failed to JSON-serialize event: %s", json_err)
+                    # Send a simplified version
+                    yield f"data: {json.dumps({'type': event_data.get('type','UNKNOWN'), 'message': str(event_data.get('message','')), 'payload': {{}}, 'timestamp': time.time()})}\n\n"
             except asyncio.TimeoutError:
                 # Send heartbeat
                 yield f"data: {json.dumps({'type': 'HEARTBEAT', 'message': '', 'payload': {}})}\n\n"
@@ -281,13 +310,25 @@ async def run_query(req: QueryRequest):
         # Drain remaining events
         while not events_queue.empty():
             event_data = events_queue.get_nowait()
-            yield f"data: {json.dumps(event_data)}\n\n"
+            try:
+                yield f"data: {json.dumps(event_data)}\n\n"
+            except (TypeError, ValueError):
+                pass
 
         # Send final result
-        if "error" in result_holder:
-            yield f"data: {json.dumps({'type': 'PIPELINE_ERROR', 'message': result_holder['error'], 'payload': {}})}\n\n"
-        elif "verdict" in result_holder:
-            yield f"data: {json.dumps({'type': 'PIPELINE_COMPLETE', 'message': 'Pipeline complete.', 'payload': result_holder['verdict']})}\n\n"
+        try:
+            if "error" in result_holder:
+                logger.info("Sending PIPELINE_ERROR: %s", result_holder['error'][:200])
+                yield f"data: {json.dumps({'type': 'PIPELINE_ERROR', 'message': result_holder['error'], 'payload': {}})}\n\n"
+            elif "verdict" in result_holder:
+                logger.info("Sending PIPELINE_COMPLETE with %d char answer", len(result_holder['verdict'].get('answer', '')))
+                yield f"data: {json.dumps({'type': 'PIPELINE_COMPLETE', 'message': 'Pipeline complete.', 'payload': result_holder['verdict']})}\n\n"
+            else:
+                logger.error("No verdict and no error in result_holder — keys: %s", list(result_holder.keys()))
+                yield f"data: {json.dumps({'type': 'PIPELINE_ERROR', 'message': 'Pipeline finished without producing a result.', 'payload': {}})}\n\n"
+        except Exception as final_err:
+            logger.error("Failed to send final result: %s", final_err, exc_info=True)
+            yield f"data: {json.dumps({'type': 'PIPELINE_ERROR', 'message': f'Internal error sending result: {final_err}', 'payload': {}})}\n\n"
 
         yield f"data: {json.dumps({'type': 'STREAM_END', 'message': 'Done', 'payload': {}})}\n\n"
 

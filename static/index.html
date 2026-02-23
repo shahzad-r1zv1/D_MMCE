@@ -1627,6 +1627,12 @@ async function handleRun() {
 function processEvent(evt) {
   const { type, message, payload } = evt;
 
+  // Skip heartbeats
+  if (type === 'HEARTBEAT' || type === 'STREAM_END') return;
+
+  // Debug logging
+  console.log(`[D-MMCE] ${type}`, { message: message?.substring(0, 80), hasPayload: !!payload, payloadKeys: payload ? Object.keys(payload) : null });
+
   // Activate pipeline stage chip
   activateStage(type);
 
@@ -1638,12 +1644,15 @@ function processEvent(evt) {
     addResponseCard(payload);
   }
 
-  // Handle terminal events
-  if (type === 'PIPELINE_COMPLETE' && payload) {
+  // Show result from FINAL_VERDICT (via event bus) or PIPELINE_COMPLETE (via SSE)
+  if ((type === 'FINAL_VERDICT' || type === 'PIPELINE_COMPLETE') && payload && payload.answer) {
+    console.log(`[D-MMCE] Showing result from ${type}, answer length:`, payload.answer.length);
     completeAllStages();
     showResult(payload);
   }
+
   if (type === 'PIPELINE_ERROR' || type === 'ERROR') {
+    console.error('[D-MMCE] ERROR:', message);
     toast(message, 'error');
   }
 }

@@ -4,12 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="aa4bfa3a-2aec-419f-91a2-e791ac932f0f" name="Changes" comment="fixed local llm connectivity">
-      <change afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+    <list default="true" id="aa4bfa3a-2aec-419f-91a2-e791ac932f0f" name="Changes" comment="fixed local llm connectivity2">
+      <change afterPath="$PROJECT_DIR$/_test_sse.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/d_mmce/meta_judge.py" beforeDir="false" afterPath="$PROJECT_DIR$/d_mmce/meta_judge.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/d_mmce/orchestrator.py" beforeDir="false" afterPath="$PROJECT_DIR$/d_mmce/orchestrator.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/d_mmce/providers/ollama_provider.py" beforeDir="false" afterPath="$PROJECT_DIR$/d_mmce/providers/ollama_provider.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server.py" beforeDir="false" afterPath="$PROJECT_DIR$/server.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/static/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/static/index.html" afterDir="false" />
     </list>
@@ -127,7 +126,7 @@
       <option name="presentableId" value="Default" />
       <updated>1771772791946</updated>
       <workItem from="1771772792929" duration="1541000" />
-      <workItem from="1771774409678" duration="8566000" />
+      <workItem from="1771774409678" duration="10232000" />
     </task>
     <task id="LOCAL-00001" summary="initial push!">
       <option name="closed" value="true" />
@@ -161,7 +160,15 @@
       <option name="project" value="LOCAL" />
       <updated>1771780715800</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="fixed local llm connectivity2">
+      <option name="closed" value="true" />
+      <created>1771783135477</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1771783135477</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -183,7 +190,8 @@
     <MESSAGE value="first cut" />
     <MESSAGE value="front end and local" />
     <MESSAGE value="fixed local llm connectivity" />
-    <option name="LAST_COMMIT_MESSAGE" value="fixed local llm connectivity" />
+    <MESSAGE value="fixed local llm connectivity2" />
+    <option name="LAST_COMMIT_MESSAGE" value="fixed local llm connectivity2" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/D_MMCE$python_server_py.coverage" NAME="python server.py Coverage Results" MODIFIED="1771777975597" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
