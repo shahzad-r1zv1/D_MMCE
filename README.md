@@ -1,249 +1,280 @@
 <div align="center">
 
-# D-MMCE
+# 🧠 D-MMCE
 
 ### Dynamic Multi-Model Consensus Engine
 
-**Aggregate weak LLM learners into a single Globally Optimal answer.**
+**Aggregate "weak" LLM learners into a single Globally Optimal answer through ensemble intelligence.**
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776ab?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![asyncio](https://img.shields.io/badge/asyncio-parallel-yellow?style=for-the-badge)](https://docs.python.org/3/library/asyncio.html)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)](LICENSE)
 
 <br>
 
 <img src="https://img.shields.io/badge/OpenAI-GPT--4o-412991?style=for-the-badge&logo=openai&logoColor=white" alt="OpenAI">
 <img src="https://img.shields.io/badge/Anthropic-Claude_3.5-D4A574?style=for-the-badge" alt="Anthropic">
 <img src="https://img.shields.io/badge/Google-Gemini_1.5-4285F4?style=for-the-badge&logo=google&logoColor=white" alt="Google">
-<img src="https://img.shields.io/badge/Ollama-Any_Local_LLM-000000?style=for-the-badge" alt="Ollama">
+<img src="https://img.shields.io/badge/Ollama-Local_LLMs-000000?style=for-the-badge" alt="Ollama">
 
 ---
 
-*One question. Four models. Four prompt framings. Peer review. Semantic clustering. Stability-verified synthesis.*
+*One question · Multiple models · Multiple prompt framings · Peer review · Semantic clustering · Stability-verified synthesis*
+
+**→ Works with cloud APIs, local LLMs via Ollama, or any combination.**
 
 </div>
 
 <br>
 
-## The Problem
+## 🎯 The Problem
 
-A single LLM can hallucinate, overfit to its training bias, or land on a **Local Optimum** — an answer that looks correct in isolation but fails under scrutiny. D-MMCE treats every individual model output as a "weak learner" and applies an ensemble pipeline inspired by boosting, adversarial validation, and immune-system cross-reactivity to converge on a **Global Optimum**.
+A single LLM can hallucinate, overfit to its training bias, or land on a **Local Optimum** — an answer that looks correct in isolation but fails under scrutiny.
 
-## How It Works
+D-MMCE treats every individual model output as a "weak learner" and applies an ensemble pipeline inspired by boosting, adversarial validation, and immune-system cross-reactivity to converge on a **Global Optimum**.
+
+> **No API keys?** No problem. D-MMCE works entirely with local Ollama models — just `ollama pull` any models and go.
+
+---
+
+## ⚡ Key Features
+
+| Feature | Description |
+|---|---|
+| 🔀 **Diversity Injection** | Automatically generates 4 semantic prompt variants (original, step-by-step, adversarial, summary) to reduce framing bias |
+| 🚀 **Parallel Inference** | `asyncio.as_completed()` fans out all model × variant calls concurrently with live streaming as each completes |
+| 🛡️ **Peer Review (Immune System)** | Cross-examination layer where models critique each other's outputs, generating a Contradiction Matrix |
+| 🎯 **Semantic Clustering** | `sentence-transformers` embeddings + HDBSCAN identify the consensus cluster; outliers (Local Optima) are discarded |
+| ⚖️ **Meta-Judge + Stability Loop** | The lowest-penalty model synthesises the final answer, then re-verifies for convergence |
+| 🦙 **Local LLM Support** | Auto-discovers all Ollama models — use Llama, Qwen, Mistral, Phi, DeepSeek, or any other local model |
+| 🌐 **Live Web UI** | Real-time pipeline visualization with streaming response cards, stability gauge, and full audit trail |
+| 📝 **Debug Logging** | Every pipeline run is traced to `d_mmce.log` for easy debugging |
+
+---
+
+## 🔬 How It Works
 
 ```
  User Query
      │
      ▼
-┌─────────────────────┐
-│  Prompt Perturbator  │  → 4 semantic variants (original, step-by-step, adversarial, summary)
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   Model Pool        │  → asyncio.gather() fans out P × 4 concurrent API calls
-│  GPT-4o │ Claude    │    across OpenAI, Anthropic, Gemini, and any local
-│  Gemini │ Ollama *  │    Ollama models (Llama, Mistral, Phi, Codellama…)
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│   Peer Reviewer     │  → Pairwise cross-examination ("You are a logic auditor…")
-│   (Immune System)   │    Generates a Contradiction Matrix with penalty scores
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│ Semantic Clusterer   │  → sentence-transformers embeddings + HDBSCAN
-│ (Consensus Finder)   │    Largest cluster = Consensus; outliers = Local Optima discarded
-└────────┬────────────┘
-         │
-         ▼
-┌─────────────────────┐
-│    Meta-Judge        │  → Lowest-penalty model synthesises the final answer
-│  (Stability Loop)    │    Re-runs until cosine similarity ≥ threshold → Global Optimum
-└─────────────────────┘
-         │
-         ▼
-   Final Verdict
-   (Globally Optimal Answer)
+┌─────────────────────────┐
+│   Prompt Perturbator    │  → 4 semantic variants (original, step-by-step,
+│   (Diversity Injection) │    adversarial, summary)
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│      Model Pool         │  → asyncio.as_completed() fans out P × 4
+│   ┌───────┬───────┐     │    concurrent calls. Responses stream to the
+│   │GPT-4o │Claude │     │    UI live as each model finishes.
+│   │Gemini │Ollama*│     │    * Any local model: Llama, Qwen, Mistral…
+│   └───────┴───────┘     │
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│     Peer Reviewer       │  → "You are a logic auditor…"
+│    (Immune System)      │    Pairwise cross-examination generates a
+│                         │    Contradiction Matrix with penalty scores
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│   Semantic Clusterer    │  → sentence-transformers embeddings + HDBSCAN
+│   (Consensus Finder)    │    Densest cluster = Consensus
+│                         │    Outliers = Local Optima → discarded
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│      Meta-Judge         │  → Lowest-penalty model synthesises the answer
+│   (Stability Loop)      │    Re-runs until cosine_sim ≥ threshold
+│                         │    Convergence → Global Optimum ✅
+└───────────┬─────────────┘
+            │
+            ▼
+     Final Verdict
+   ✅ Globally Optimal Answer
 ```
 
 ### Local vs. Global Optimality
 
 | Concept | In D-MMCE |
 |---|---|
-| **Local Optimum** | A model response that may be plausible alone but diverges from ensemble consensus — it falls outside the main semantic cluster or is flagged by peer reviewers. |
-| **Global Optimum** | The synthesised answer that (1) belongs to the densest semantic cluster, (2) survives peer review, and (3) remains **stable** across successive synthesis rounds. |
-| **Stability Loop** | If re-generating the synthesis yields a semantically different answer (cosine sim < threshold), the system treats it as a Local Optimum and retries. Convergence = Global Optimum. |
+| **Local Optimum** | A response that seems plausible alone but diverges from ensemble consensus — falls outside the main semantic cluster or is flagged by peer reviewers |
+| **Global Optimum** | The synthesised answer that (1) belongs to the densest semantic cluster, (2) survives peer review, and (3) remains **stable** across successive synthesis rounds |
+| **Stability Loop** | If re-generating the synthesis yields a semantically different answer (cosine sim < threshold), the system treats it as a Local Optimum and retries. Convergence = Global Optimum |
 
-## Architecture
+---
 
-```
-D_MMCE/
-├── main.py                          # CLI entry point
-├── server.py                        # FastAPI web server + SSE streaming
-├── requirements.txt                 # All dependencies
-├── .env.example                     # API key template
-├── static/
-│   └── index.html                   # Single-page web UI
-└── d_mmce/
-    ├── __init__.py                  # Public API: D_MMCE, FinalVerdict
-    ├── schemas.py                   # Typed dataclasses for pipeline data
-    ├── observer.py                  # Observer Pattern: EventBus + EventType
-    ├── prompt_perturbator.py        # Diversity Injection (4 prompt variants)
-    ├── peer_reviewer.py             # Cross-Examination / Contradiction Matrix
-    ├── semantic_clusterer.py        # Embeddings + HDBSCAN consensus clustering
-    ├── meta_judge.py                # Meta-Judge + Stability Loop
-    ├── orchestrator.py              # D_MMCE class — full async pipeline
-    └── providers/
-        ├── __init__.py              # Auto-registers all providers
-        ├── base.py                  # Strategy interface (ModelProvider ABC)
-        ├── factory.py               # Factory Pattern + @register decorator
-        ├── openai_provider.py       # GPT-4o wrapper
-        ├── anthropic_provider.py    # Claude 3.5 Sonnet wrapper
-        ├── gemini_provider.py       # Gemini 1.5 Pro wrapper
-        └── ollama_provider.py       # Any local model via Ollama HTTP
-```
+## 🚀 Quick Start
 
-### Design Patterns
-
-| Pattern | Where | Why |
-|---|---|---|
-| **Strategy** | `ModelProvider` ABC | Each LLM backend is swappable; the orchestrator is provider-agnostic. |
-| **Factory** | `ProviderFactory` + `@register` | Providers self-register on import — no central switch statement. |
-| **Observer** | `EventBus` | Pipeline stages emit typed events without coupling to loggers, UIs, or dashboards. |
-
-## Quick Start
-
-### 1. Clone & install
+### 1. Clone & Install
 
 ```bash
 git clone https://github.com/your-username/D_MMCE.git
 cd D_MMCE
 python -m venv .venv
+
 # Windows
 .\.venv\Scripts\activate
+
 # macOS / Linux
 source .venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-### 2. Configure API keys
+### 2. Configure (pick any option)
+
+<details>
+<summary><b>Option A: Cloud APIs</b> — set API keys in <code>.env</code></summary>
 
 ```bash
 cp .env.example .env
-# Edit .env and add your keys:
+# Edit .env:
 #   OPENAI_API_KEY=sk-...
 #   ANTHROPIC_API_KEY=sk-ant-...
 #   GOOGLE_API_KEY=AI...
-#   OLLAMA_BASE_URL=http://localhost:11434
 ```
 
-> **Tip:** You only need _at least one_ provider configured. The engine gracefully skips unavailable providers.
+</details>
 
-### 3a. Run via CLI
+<details>
+<summary><b>Option B: Local LLMs only</b> — no API keys needed</summary>
 
 ```bash
-python main.py "What causes the Northern Lights?"
-python main.py --providers openai,anthropic "Explain quantum entanglement"
-python main.py --stability-threshold 0.9 --max-reruns 5 -v "Is P=NP?"
+# 1. Install Ollama → https://ollama.com/download
+# 2. Pull any models
+ollama pull llama3.2
+ollama pull qwen3:4b
+ollama pull mistral
+
+# 3. Ensure Ollama is running
+ollama serve
 ```
 
-### 3b. Run via Web UI
+D-MMCE auto-discovers all installed Ollama models — no configuration needed.
+
+</details>
+
+<details>
+<summary><b>Option C: Mixed</b> — cloud + local together</summary>
+
+Set API keys in `.env` AND have Ollama running. D-MMCE will use everything available.
+
+</details>
+
+> **Tip:** You need *at least one* working provider. The engine auto-detects what's available and gracefully skips the rest.
+
+### 3. Run
+
+**Web UI (recommended):**
 
 ```bash
 python server.py
 # Open http://localhost:8000
 ```
 
-The web UI provides:
-- ⚡ **Real-time pipeline visualization** — watch events stream from each stage
-- ⚙ **Settings panel** — configure API keys, toggle providers, tune stability threshold & max re-runs
-- 🦙 **Local LLM picker** — auto-discovers all models installed in Ollama and lets you select any combination
-- 📊 **Stability gauge** — visual indicator of convergence quality
-- 📋 **Audit trail** — full transparency into every pipeline decision
+**CLI:**
 
-## Using Local LLMs (Ollama)
+```bash
+python main.py "What causes the Northern Lights?"
+```
 
-D-MMCE can use **any model** installed on your local [Ollama](https://ollama.com) instance — Llama 3.1, Mistral, Phi, CodeLlama, Gemma, Qwen, DeepSeek, or any other. Multiple local models can participate in the ensemble simultaneously, each registered as a distinct provider (`ollama:mistral`, `ollama:phi3`, etc.).
+---
+
+## 🌐 Web UI
+
+The web interface provides a full real-time view of the D-MMCE pipeline:
+
+| Feature | Description |
+|---|---|
+| 🎲 **Pipeline Stages** | Animated chip indicators for each stage: Diversify → Infer → Peer Review → Cluster → Synthesize → Verdict |
+| 📡 **Live Event Feed** | Streaming log of every pipeline event as it happens |
+| 🧠 **Model Response Cards** | Individual outputs from each model × prompt variant, rendered live as they arrive |
+| 🏆 **Globally Optimal Answer** | The final synthesised result with stability score |
+| 📊 **Stability Gauge** | Circular SVG gauge showing convergence quality (green ≥ 85%, yellow ≥ 60%, red < 60%) |
+| 📋 **Audit Trail** | Full step-by-step breakdown of every pipeline decision |
+| ⚙️ **Settings Panel** | Configure API keys, toggle cloud providers, select local Ollama models, tune stability threshold & max re-runs |
+| 🦙 **Local LLM Picker** | Auto-discovers all Ollama models with parameter size, quantization, and family info |
+
+---
+
+## 🦙 Using Local LLMs (Ollama)
+
+D-MMCE works with **any model** installed on your local [Ollama](https://ollama.com) instance. Multiple local models participate simultaneously, each as a distinct ensemble member (`ollama:qwen3:4b`, `ollama:llama3.2:3b`, etc.).
 
 ### Setup
 
 ```bash
-# 1. Install Ollama (https://ollama.com/download)
-# 2. Pull any models you want to use
-ollama pull llama3.1
+# Install Ollama → https://ollama.com/download
+# Pull models
+ollama pull llama3.2:3b
+ollama pull qwen3:4b
 ollama pull mistral
 ollama pull phi3
 ollama pull codellama
 
-# 3. Ensure the server is running
+# Start the server
 ollama serve
 ```
 
-### CLI usage
+### CLI Usage
 
 ```bash
-# Add one local model alongside cloud providers
-python main.py --ollama-model mistral "Explain transformers"
+# Auto-discover local models (no flags needed — D-MMCE finds them)
+python main.py "Explain transformers"
 
-# Add multiple local models (each becomes a separate ensemble member)
+# Explicitly add specific local models
 python main.py --ollama-model mistral --ollama-model phi3 "Compare sorting algorithms"
 
-# Use ONLY local models (no cloud APIs needed)
-python main.py --providers ollama:mistral --ollama-model phi3 --ollama-model codellama "Write a merge sort"
-
-# Use the ollama:model shorthand in --providers
-python main.py --providers openai,ollama:mistral "What is dark matter?"
+# Mix cloud + local
+python main.py --providers openai --ollama-model mistral "What is dark matter?"
 ```
 
-### Web UI usage
+### Web UI Usage
 
-1. Open Settings (⚙ button)
-2. Scroll to the **🦙 Local LLMs** section
-3. The UI auto-discovers all models installed on your Ollama server
-4. Click to select/deselect any model — selected models join the ensemble alongside cloud providers
-5. Hit **Save Settings** and run your query
+1. Open the Settings panel (⚙️ button)
+2. Scroll to **🦙 Local LLMs** — the UI auto-discovers all installed Ollama models
+3. Click to select/deselect any model
+4. Save & run your query — selected models join the ensemble
 
-### Programmatic usage
+### Programmatic Usage
 
 ```python
-from d_mmce import D_MMCE
+import asyncio
 from d_mmce.providers.ollama_provider import OllamaProvider
 
-# Create providers for specific local models
-mistral = OllamaProvider(model="mistral")
-phi3    = OllamaProvider(model="phi3")
+async def main():
+    # List all available local models
+    models = await OllamaProvider.list_local_models()
+    for m in models:
+        print(f"{m['name']:20s}  {m['parameter_size']:>5s}  {m['quantization']}")
 
-engine = D_MMCE(providers=[mistral, phi3])
-verdict = await engine.run("Explain gradient descent")
+asyncio.run(main())
 ```
 
-### List available models
+---
 
-```python
-from d_mmce.providers.ollama_provider import OllamaProvider
-
-models = await OllamaProvider.list_local_models()
-for m in models:
-    print(f"{m['short_name']:20s}  {m['parameter_size']:>5s}  {m['quantization']}")
-```
-
-## CLI Options
+## 📖 CLI Reference
 
 | Flag | Default | Description |
 |---|---|---|
-| `--providers` | all registered | Comma-separated list of providers (`ollama:model` syntax supported) |
-| `--ollama-model` | — | Add a local Ollama model; can be repeated for multiple models |
-| `--review-provider` | `openai` | Model used for peer review critiques |
-| `--embedding-model` | `all-MiniLM-L6-v2` | sentence-transformers model for clustering |
-| `--stability-threshold` | `0.85` | Cosine similarity required for convergence |
-| `--max-reruns` | `3` | Maximum Stability Loop iterations |
+| `query` | *(required)* | The question or task to process |
+| `--providers` | auto-discover all | Comma-separated list (e.g. `openai,anthropic`, `ollama:mistral`) |
+| `--ollama-model` | — | Add a local Ollama model; repeatable for multiple models |
+| `--review-provider` | `auto` | Model for peer reviews (`auto` = best available provider) |
+| `--embedding-model` | `all-MiniLM-L6-v2` | sentence-transformers model for semantic clustering |
+| `--stability-threshold` | `0.85` | Cosine similarity required for Stability Loop convergence |
+| `--max-reruns` | `3` | Maximum synthesis re-runs in the Stability Loop |
 | `-v, --verbose` | off | Enable DEBUG logging |
 
-## Programmatic Usage
+---
+
+## 🐍 Programmatic API
 
 ```python
 import asyncio
@@ -253,6 +284,7 @@ async def main():
     engine = D_MMCE(
         stability_threshold=0.85,
         max_stability_reruns=3,
+        review_provider_name="auto",  # picks best available
     )
 
     verdict = await engine.run("What is dark matter?")
@@ -266,46 +298,151 @@ async def main():
 asyncio.run(main())
 ```
 
-### Subscribe to pipeline events
+### Subscribe to Pipeline Events
 
 ```python
 from d_mmce.observer import EventType
 
-def my_handler(event):
-    print(f"[{event.event_type.name}] {event.message}")
+def on_response(event):
+    data = event.payload
+    print(f"[{data['provider']}] {data['variant']}: {data['text'][:100]}...")
 
 engine = D_MMCE()
-engine.event_bus.subscribe(EventType.PEER_CRITIQUE, my_handler)
-engine.event_bus.subscribe(EventType.STABILITY_CHECK, my_handler)
+engine.event_bus.subscribe(EventType.MODEL_RESPONSE, on_response)
+engine.event_bus.subscribe(EventType.STABILITY_CHECK, lambda e: print(e.message))
 ```
 
-## Technical Stack
+### Available Event Types
+
+| Event | Emitted when… |
+|---|---|
+| `PROMPT_PERTURBED` | Prompt variants are generated |
+| `MODEL_RESPONSE` | A model returns a response (includes full text in payload) |
+| `PEER_CRITIQUE` | A peer review critique is completed |
+| `CLUSTER_FORMED` | Semantic clustering identifies the consensus cluster |
+| `OUTLIER_DISCARDED` | A response is classified as an outlier |
+| `SYNTHESIS_STARTED` | Meta-Judge begins synthesis |
+| `STABILITY_CHECK` | A stability loop iteration completes |
+| `STABILITY_RERUN` | Synthesis is re-run due to instability |
+| `FINAL_VERDICT` | Final answer is produced (includes answer in payload) |
+
+---
+
+## 🏗️ Architecture
+
+```
+D_MMCE/
+├── main.py                          # CLI entry point
+├── server.py                        # FastAPI + SSE streaming server
+├── requirements.txt                 # All dependencies
+├── .env.example                     # API key template
+├── .gitignore                       # Standard Python gitignore
+├── d_mmce.log                       # Runtime debug log (auto-created)
+├── static/
+│   └── index.html                   # Single-page web UI (zero build step)
+└── d_mmce/
+    ├── __init__.py                  # Public API: D_MMCE, FinalVerdict
+    ├── schemas.py                   # Typed dataclasses (ModelResponse, etc.)
+    ├── observer.py                  # Observer pattern: EventBus + EventType
+    ├── prompt_perturbator.py        # Diversity injection (4 prompt variants)
+    ├── peer_reviewer.py             # Cross-examination / Contradiction Matrix
+    ├── semantic_clusterer.py        # Embeddings + HDBSCAN consensus clustering
+    ├── meta_judge.py                # Meta-Judge + Stability Loop
+    ├── orchestrator.py              # D_MMCE class — full async pipeline
+    └── providers/
+        ├── __init__.py              # Auto-registers all providers
+        ├── base.py                  # Strategy interface (ModelProvider ABC)
+        ├── factory.py               # Factory + @register + auto-discovery
+        ├── openai_provider.py       # OpenAI GPT-4o
+        ├── anthropic_provider.py    # Anthropic Claude 3.5 Sonnet
+        ├── gemini_provider.py       # Google Gemini 1.5 Pro
+        └── ollama_provider.py       # Any local model via Ollama HTTP API
+```
+
+### Design Patterns
+
+| Pattern | Where | Why |
+|---|---|---|
+| **Strategy** | `ModelProvider` ABC | Each LLM backend is a swappable strategy; the orchestrator is provider-agnostic |
+| **Factory** | `ProviderFactory` + `@register` | Providers self-register on import — no central switch statement |
+| **Observer** | `EventBus` + `EventType` | Pipeline stages emit typed events for UIs, loggers, and dashboards without coupling |
+| **Async Orchestrator** | `D_MMCE.run()` | `asyncio.as_completed()` for parallel inference with live event streaming |
+
+---
+
+## 🛡️ How the Pipeline Prevents Hallucinations
+
+| Layer | Mechanism |
+|---|---|
+| **1. Diversity Injection** | Multiple prompt framings prevent a single framing from biasing all models toward the same error |
+| **2. Heterogeneous Models** | Different training data, architectures, and alignment approaches make correlated failures unlikely |
+| **3. Peer Review** | The "logic auditor" prompt explicitly asks for *failure points and factual inaccuracies*. Hallucinating models get penalised in the Contradiction Matrix |
+| **4. Semantic Clustering** | Outlier responses (hallucinations no other model agrees with) are mathematically identified and discarded |
+| **5. Stability Loop** | Even after synthesis, if re-generation produces a different answer, the system recognises it hasn't converged and retries |
+
+---
+
+## 🛠️ Technical Stack
 
 | Layer | Technology |
 |---|---|
 | Language | Python 3.10+ |
-| Async orchestration | `asyncio.gather()` for parallel inference |
+| Async orchestration | `asyncio.as_completed()` for parallel inference with live streaming |
 | LLM SDKs | `openai`, `anthropic`, `google-generativeai`, `httpx` (Ollama) |
 | Embeddings | `sentence-transformers` (`all-MiniLM-L6-v2`) |
 | Clustering | `hdbscan` with cosine-similarity fallback |
-| Web server | FastAPI + SSE streaming |
-| Frontend | Vanilla HTML/CSS/JS — zero build step |
+| Web server | FastAPI + SSE (Server-Sent Events) streaming |
+| Frontend | Vanilla HTML/CSS/JS — zero build step, dark-themed UI |
+| Logging | Python `logging` → console + `d_mmce.log` file |
 
-## How the Pipeline Prevents Hallucinations
+---
 
-1. **Diversity Injection** — Multiple prompt framings prevent a single framing from biasing all models toward the same error.
-2. **Heterogeneous Models** — Different training data, architectures, and alignment approaches mean correlated failures are unlikely.
-3. **Peer Review** — The "logic auditor" prompt explicitly asks for _failure points and factual inaccuracies_. Models that hallucinate get penalised in the Contradiction Matrix.
-4. **Semantic Clustering** — Outlier responses (hallucinations that no other model agrees with) are mathematically identified and discarded.
-5. **Stability Loop** — Even after synthesis, if re-generation produces a different answer, the system recognises it hasn't converged and retries.
+## 🔧 Troubleshooting
 
-## License
+### Debug Log
+
+Every pipeline run is logged to **`d_mmce.log`** in the project root. Check it for:
+- Which providers were discovered and their availability status
+- Which model the Meta-Judge selected
+- Response lengths and latencies
+- Errors, timeouts, and stack traces
+
+```bash
+# View the last 50 lines
+tail -50 d_mmce.log                     # macOS/Linux
+Get-Content d_mmce.log -Tail 50         # Windows PowerShell
+```
+
+### Common Issues
+
+| Issue | Solution |
+|---|---|
+| `No providers available` | Set API keys in `.env` or start Ollama with at least one pulled model |
+| `ReadTimeout` on large models | Large models (20B+) can take 3–5 min per call. The default timeout is 300s. Ensure Ollama isn't overloaded with concurrent requests |
+| `404 Not Found` from Ollama | The model tag doesn't match what's installed. Run `ollama list` and use the exact tag (e.g. `qwen3:4b` not `qwen3`) |
+| Response cards not showing | Open browser DevTools (F12) → Console. Look for `[D-MMCE]` logs. Hard-refresh with `Ctrl+Shift+R` |
+| Old code still running | Kill stale Python processes and restart: `Get-Process python* \| Stop-Process -Force` (Windows) or `pkill -f server.py` (Linux/macOS), then `python server.py` |
+
+### Browser Console Debugging
+
+The web UI logs all pipeline events to the browser console with the `[D-MMCE]` prefix:
+```
+[D-MMCE] MODEL_RESPONSE { provider: "ollama:qwen3:4b", hasText: true }
+[D-MMCE] FINAL_VERDICT  { hasPayload: true, answer_length: 1275 }
+```
+
+---
+
+## 📄 License
 
 MIT — see [LICENSE](LICENSE) for details.
 
 ---
 
 <div align="center">
-<sub>Built to prove that the wisdom of the crowd applies to machines too.</sub>
-</div>
 
+**Built to prove that the wisdom of the crowd applies to machines too.**
+
+<sub>D-MMCE • Dynamic Multi-Model Consensus Engine</sub>
+
+</div>
