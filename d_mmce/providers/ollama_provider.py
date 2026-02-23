@@ -85,6 +85,59 @@ class OllamaProvider(ModelProvider):
         }
         return text, meta
 
+    async def _call_stream(
+        self,
+        prompt: str,
+        on_token: Any | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Stream tokens from Ollama, calling *on_token(chunk)* for each.
+
+        Falls back to non-streaming ``_call`` if the connection fails.
+        """
+        import json as _json
+
+        payload = {
+            "model": self._model,
+            "prompt": prompt,
+            "stream": True,
+        }
+        accumulated = []
+        meta: dict[str, Any] = {"model": self._model}
+
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self._base_url}/api/generate",
+                    json=payload,
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            chunk = _json.loads(line)
+                        except _json.JSONDecodeError:
+                            continue
+
+                        token = chunk.get("response", "")
+                        if token:
+                            accumulated.append(token)
+                            if on_token:
+                                on_token(token)
+
+                        if chunk.get("done"):
+                            meta["total_duration"] = chunk.get("total_duration")
+                            meta["eval_count"] = chunk.get("eval_count")
+                            meta["model"] = chunk.get("model", self._model)
+        except Exception:
+            # Fallback to non-streaming
+            logger.debug("Streaming failed for %s, falling back", self.name)
+            return await self._call(prompt)
+
+        return "".join(accumulated), meta
+
     async def is_available(self) -> bool:
         """Check if the Ollama server is reachable and the model exists."""
         try:

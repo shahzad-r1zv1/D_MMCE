@@ -11,6 +11,7 @@ numpy>=1.24
 fastapi>=0.100
 uvicorn>=0.20
 python-multipart>=0.0.6
+aiosqlite>=0.20
 
 # Testing
 pytest>=8.0

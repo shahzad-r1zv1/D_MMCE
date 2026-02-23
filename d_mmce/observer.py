@@ -24,6 +24,7 @@ class EventType(Enum):
 
     PROMPT_PERTURBED = auto()
     MODEL_RESPONSE = auto()
+    TOKEN_CHUNK = auto()
     PEER_CRITIQUE = auto()
     CLUSTER_FORMED = auto()
     OUTLIER_DISCARDED = auto()

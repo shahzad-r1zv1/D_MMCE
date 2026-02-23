@@ -86,6 +86,14 @@ class D_MMCE:
         stability_threshold: float = 0.85,
         max_stability_reruns: int = 3,
         enable_logging_observer: bool = True,
+        # --- Concurrency & Retry (Feature 4) ---
+        max_concurrent_tasks: int = 4,
+        max_retries: int = 2,
+        retry_base_delay: float = 2.0,
+        # --- Streaming (Feature 3) ---
+        enable_streaming: bool = True,
+        # --- History (Feature 5) ---
+        history_db: Any | None = None,
     ) -> None:
         # --- Event bus ---
         self._bus = EventBus()
@@ -103,6 +111,17 @@ class D_MMCE:
         self._embedding_model = embedding_model
         self._stability_threshold = stability_threshold
         self._max_stability_reruns = max_stability_reruns
+
+        # --- Concurrency & Retry ---
+        self._semaphore = asyncio.Semaphore(max_concurrent_tasks)
+        self._max_retries = max_retries
+        self._retry_base_delay = retry_base_delay
+
+        # --- Streaming ---
+        self._enable_streaming = enable_streaming
+
+        # --- History ---
+        self._history_db = history_db
 
         # --- Eagerly build components if providers were given ---
         if self._providers:
@@ -188,24 +207,67 @@ class D_MMCE:
             )
         return available
 
+    async def _call_with_retry(
+        self,
+        provider: ModelProvider,
+        prompt: str,
+        variant: str,
+    ) -> ModelResponse:
+        """Call a provider with semaphore gating, streaming, and exponential backoff retry."""
+        last_exc: Exception | None = None
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                async with self._semaphore:
+                    if self._enable_streaming and provider.supports_streaming:
+                        def _on_token(token: str) -> None:
+                            if self._bus:
+                                self._bus.publish(
+                                    Event(
+                                        EventType.TOKEN_CHUNK,
+                                        message="",
+                                        payload={
+                                            "provider": provider.name,
+                                            "variant": variant,
+                                            "token": token,
+                                        },
+                                    )
+                                )
+                        return await provider.generate_stream(
+                            prompt, variant=variant, on_token=_on_token
+                        )
+                    else:
+                        return await provider.generate(prompt, variant=variant)
+            except Exception as exc:
+                last_exc = exc
+                if attempt < self._max_retries:
+                    delay = self._retry_base_delay * (2 ** attempt)
+                    logger.warning(
+                        "Retry %d/%d for %s::%s after %s (delay %.1fs)",
+                        attempt + 1, self._max_retries, provider.name,
+                        variant, type(exc).__name__, delay,
+                    )
+                    await asyncio.sleep(delay)
+
+        raise last_exc  # type: ignore[misc]
+
     async def _parallel_inference(
         self,
         providers: Sequence[ModelProvider],
         variants: dict[str, str],
     ) -> list[ModelResponse]:
-        """Fan out all (provider × variant) calls via ``asyncio.gather()``.
+        """Fan out all (provider × variant) calls with concurrency control.
 
-        This is the core async orchestration step.  For *P* providers and
-        *V* variants, it launches *P × V* concurrent tasks.  Events are
-        published **as each task completes** so the UI can stream responses
-        live rather than waiting for the slowest model.
+        Uses a semaphore to limit parallelism, exponential-backoff retry
+        for transient failures, and per-token streaming for providers
+        that support it.  Events are published as each task completes.
         """
         tasks: list[asyncio.Task[ModelResponse]] = []
         for provider in providers:
             for variant_name, prompt_text in variants.items():
                 tasks.append(
                     asyncio.create_task(
-                        provider.generate(prompt_text, variant=variant_name)
+                        self._call_with_retry(provider, prompt_text, variant_name)
                     )
                 )
 
@@ -373,6 +435,18 @@ class D_MMCE:
                     },
                 )
             )
+
+        # 7. Persist to history database (Feature 5)
+        if self._history_db:
+            try:
+                await self._history_db.save_run(
+                    query=query,
+                    verdict=verdict,
+                    responses=responses,
+                    critiques=matrix.critiques,
+                )
+            except Exception:
+                logger.warning("Failed to save run to history DB", exc_info=True)
 
         return verdict
 

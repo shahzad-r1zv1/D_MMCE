@@ -22,6 +22,10 @@ venv/
 d_mmce.log
 *.log
 
+# History database
+d_mmce_history.db
+*.db
+
 # OS
 .DS_Store
 Thumbs.db

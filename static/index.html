@@ -697,6 +697,70 @@ a:hover { text-decoration: underline; }
 .result-section { display: none; }
 .result-section.active { display: block; }
 
+/* History section */
+.history-section { margin-top: var(--space-lg); }
+.history-list { display: flex; flex-direction: column; gap: var(--space-sm); }
+.history-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--transition-base), background var(--transition-base);
+}
+.history-item:hover { border-color: var(--accent); background: var(--bg-card-hover); }
+.history-query { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 400px; }
+.history-meta { font-size: .75rem; color: var(--text-muted); white-space: nowrap; }
+.history-stability {
+  display: inline-flex; align-items: center; gap: .25rem;
+  font-size: .8rem; font-weight: 600; padding: .15rem .5rem;
+  border-radius: var(--radius-full);
+}
+.history-stability.good  { background: var(--success-bg); color: var(--success); }
+.history-stability.mid   { background: var(--warning-bg); color: var(--warning); }
+.history-stability.low   { background: var(--danger-bg);  color: var(--danger); }
+.history-delete {
+  background: none; border: none; color: var(--text-muted); cursor: pointer;
+  font-size: .9rem; padding: .25rem; border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+}
+.history-delete:hover { color: var(--danger); }
+
+/* History detail modal */
+.history-modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: var(--bg-overlay); z-index: 999;
+}
+.history-modal-overlay.open { display: block; }
+.history-modal {
+  display: none; position: fixed; top: 5vh; left: 50%; transform: translateX(-50%);
+  width: min(90vw, 800px); max-height: 90vh; overflow-y: auto;
+  background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl); z-index: 1000;
+  box-shadow: var(--shadow-lg);
+}
+.history-modal.open { display: block; }
+.history-modal-body { padding: var(--space-lg); }
+.history-modal-body .response-grid { margin-top: var(--space-md); }
+.history-modal-answer {
+  background: var(--bg-input); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); padding: var(--space-md);
+  white-space: pre-wrap; font-size: .9rem; line-height: 1.7;
+  max-height: 300px; overflow-y: auto; margin: var(--space-md) 0;
+}
+
+/* Streaming cursor */
+.streaming-cursor::after {
+  content: '▊'; color: var(--accent); animation: blink .8s step-end infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.btn-sm { padding: .25rem .75rem; font-size: .8rem; }
+
 /* Live model responses */
 .responses-section { display: none; }
 .responses-section.active { display: block; }
@@ -1095,6 +1159,36 @@ a:hover { text-decoration: underline; }
     </div>
   </section>
 
+  <!-- ============================================================
+       HISTORY
+       ============================================================ -->
+  <section class="card history-section" id="historySection" aria-label="Run history">
+    <div class="card-header">
+      <div class="icon" style="background:var(--info-bg);color:var(--info);">📜</div>
+      <div>
+        <h2>Run History</h2>
+        <p>Browse past pipeline runs and compare results.</p>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:.5rem;">
+        <button class="btn btn-ghost btn-sm" onclick="loadHistory()" title="Refresh">⟳ Refresh</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearHistory()" title="Clear all" style="color:var(--danger);">🗑 Clear</button>
+      </div>
+    </div>
+    <div id="historyList" class="history-list">
+      <p style="color:var(--text-muted);text-align:center;padding:1rem;">Click Refresh to load history.</p>
+    </div>
+  </section>
+
+  <!-- History detail modal -->
+  <div class="history-modal-overlay" id="historyModalOverlay" onclick="closeHistoryModal()"></div>
+  <div class="history-modal" id="historyModal">
+    <div class="settings-header">
+      <h2>📋 Run Details</h2>
+      <button class="btn btn-ghost btn-icon" onclick="closeHistoryModal()" aria-label="Close">✕</button>
+    </div>
+    <div class="history-modal-body" id="historyModalBody"></div>
+  </div>
+
 </div><!-- /.app-container -->
 
 <!-- ================================================================
@@ -1191,6 +1285,34 @@ a:hover { text-decoration: underline; }
       </div>
     </div>
 
+    <hr class="settings-divider">
+
+    <!-- Concurrency -->
+    <div class="setting-group">
+      <label for="settingConcurrency">⚡ Max Concurrent Tasks</label>
+      <div class="slider-row">
+        <input type="range" id="settingConcurrency" min="1" max="12" step="1" value="4">
+        <span class="slider-value" id="concurrencyVal">4</span>
+      </div>
+    </div>
+
+    <!-- Retries -->
+    <div class="setting-group">
+      <label for="settingRetries">🔄 Max Retries</label>
+      <div class="slider-row">
+        <input type="range" id="settingRetries" min="0" max="5" step="1" value="2">
+        <span class="slider-value" id="retriesVal">2</span>
+      </div>
+    </div>
+
+    <!-- Streaming toggle -->
+    <div class="setting-group">
+      <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+        <input type="checkbox" id="settingStreaming" checked style="width:auto;">
+        📡 Enable Token Streaming
+      </label>
+    </div>
+
   </div>
 
   <div class="settings-footer">
@@ -1225,7 +1347,11 @@ const state = {
     embedding_model: 'all-MiniLM-L6-v2',
     stability_threshold: 0.85,
     max_reruns: 3,
+    max_concurrent: 4,
+    max_retries: 2,
+    enable_streaming: true,
   },
+  streamingCards: {},  // track live-streaming response cards by provider::variant
 };
 
 /* ----------------------------------------------------------------
@@ -1304,6 +1430,9 @@ async function saveSettings() {
   state.settings.embedding_model = $('#settingEmbeddingModel').value;
   state.settings.stability_threshold = parseFloat($('#settingStabilityThreshold').value);
   state.settings.max_reruns = parseInt($('#settingMaxReruns').value);
+  state.settings.max_concurrent = parseInt($('#settingConcurrency').value);
+  state.settings.max_retries = parseInt($('#settingRetries').value);
+  state.settings.enable_streaming = $('#settingStreaming').checked;
 
   // 3. Capture active providers
   state.providers.forEach(p => {
@@ -1327,6 +1456,12 @@ $('#settingStabilityThreshold').addEventListener('input', e => {
 });
 $('#settingMaxReruns').addEventListener('input', e => {
   $('#rerunsVal').textContent = e.target.value;
+});
+$('#settingConcurrency').addEventListener('input', e => {
+  $('#concurrencyVal').textContent = e.target.value;
+});
+$('#settingRetries').addEventListener('input', e => {
+  $('#retriesVal').textContent = e.target.value;
 });
 
 /* ----------------------------------------------------------------
@@ -1462,6 +1597,7 @@ function toggleLocalModel(index) {
 const stageMap = {
   PROMPT_PERTURBED:   'perturb',
   MODEL_RESPONSE:     'infer',
+  TOKEN_CHUNK:        'infer',
   PEER_CRITIQUE:      'review',
   CLUSTER_FORMED:     'cluster',
   OUTLIER_DISCARDED:  'cluster',
@@ -1476,6 +1612,7 @@ const badgeMap = {
   PROMPT_PERTURBED:   'perturb',
   PIPELINE_STARTED:   'model',
   MODEL_RESPONSE:     'model',
+  TOKEN_CHUNK:        'model',
   PEER_CRITIQUE:      'critique',
   CLUSTER_FORMED:     'cluster',
   OUTLIER_DISCARDED:  'cluster',
@@ -1544,6 +1681,168 @@ function escapeHtml(s) {
 }
 
 /* ----------------------------------------------------------------
+   TOKEN STREAMING (live typing)
+   ---------------------------------------------------------------- */
+function handleTokenChunk(payload) {
+  const key = `${payload.provider}::${payload.variant}`;
+  const token = payload.token || '';
+
+  if (!state.streamingCards[key]) {
+    // Create a new streaming card
+    dom.responsesSection.classList.add('active');
+    const card = document.createElement('div');
+    card.className = 'response-card';
+    card.id = `stream-${key.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    card.innerHTML = `
+      <div class="response-card-header">
+        <span class="response-provider">${escapeHtml(payload.provider)}</span>
+        <span class="response-variant">${escapeHtml(payload.variant)}</span>
+      </div>
+      <div class="response-text streaming-cursor" style="white-space:pre-wrap;font-size:.85rem;max-height:200px;overflow-y:auto;"></div>
+    `;
+    dom.responseGrid.appendChild(card);
+    state.streamingCards[key] = card.querySelector('.response-text');
+  }
+
+  // Append token
+  const el = state.streamingCards[key];
+  el.textContent += token;
+  el.scrollTop = el.scrollHeight;
+}
+
+function finalizeStreamingCard(payload) {
+  const key = `${payload.provider}::${payload.variant}`;
+  const el = state.streamingCards[key];
+  if (el) {
+    el.classList.remove('streaming-cursor');
+    // Remove the streaming card — addResponseCard will create the final one
+    const card = el.closest('.response-card');
+    if (card) card.remove();
+    delete state.streamingCards[key];
+  }
+}
+
+/* ----------------------------------------------------------------
+   HISTORY (Feature 5)
+   ---------------------------------------------------------------- */
+async function loadHistory() {
+  const container = $('#historyList');
+  container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:1rem;">Loading…</p>';
+  try {
+    const res = await fetch('/api/history?limit=50');
+    const data = await res.json();
+    if (!data.runs || data.runs.length === 0) {
+      container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:1rem;">No runs yet. Run a query to get started!</p>';
+      return;
+    }
+    container.innerHTML = data.runs.map(r => {
+      const date = new Date(r.created_at).toLocaleString();
+      const stabCls = r.stability >= 0.85 ? 'good' : r.stability >= 0.6 ? 'mid' : 'low';
+      const queryPreview = r.query.length > 60 ? r.query.substring(0, 60) + '…' : r.query;
+      return `
+        <div class="history-item" onclick="viewHistoryRun('${r.id}')">
+          <span class="history-query" title="${escapeHtml(r.query)}">${escapeHtml(queryPreview)}</span>
+          <span class="history-stability ${stabCls}">${(r.stability * 100).toFixed(0)}%</span>
+          <span class="history-meta">${r.provider_count} providers · ${r.response_count} responses · ${date}</span>
+          <button class="history-delete" onclick="event.stopPropagation();deleteHistoryRun('${r.id}')" title="Delete">🗑</button>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    container.innerHTML = `<p style="color:var(--danger);text-align:center;padding:1rem;">Failed to load history: ${err.message}</p>`;
+  }
+}
+
+async function viewHistoryRun(runId) {
+  try {
+    const res = await fetch(`/api/history/${runId}`);
+    if (!res.ok) { toast('Run not found.', 'error'); return; }
+    const run = await res.json();
+
+    const date = new Date(run.created_at).toLocaleString();
+    const stabCls = run.stability >= 0.85 ? 'good' : run.stability >= 0.6 ? 'mid' : 'low';
+
+    let html = `
+      <div style="margin-bottom:1rem;">
+        <div style="font-size:.8rem;color:var(--text-muted);">${date} · ${run.provider_count} providers · ${run.response_count} responses</div>
+        <div style="font-weight:600;margin:.5rem 0;font-size:1.05rem;">${escapeHtml(run.query)}</div>
+        <span class="history-stability ${stabCls}" style="font-size:.9rem;">Stability: ${(run.stability * 100).toFixed(1)}%</span>
+        <span style="margin-left:.5rem;font-size:.8rem;color:var(--text-muted);">${run.num_reruns} re-runs</span>
+      </div>
+      <h3 style="margin:1rem 0 .5rem;font-size:.95rem;">🏆 Final Answer</h3>
+      <div class="history-modal-answer">${escapeHtml(run.answer)}</div>
+    `;
+
+    if (run.responses && run.responses.length) {
+      html += `<h3 style="margin:1rem 0 .5rem;font-size:.95rem;">🧠 Model Responses (${run.responses.length})</h3>`;
+      html += '<div class="response-grid">';
+      for (const r of run.responses) {
+        html += `
+          <div class="response-card">
+            <div class="response-card-header">
+              <span class="response-provider">${escapeHtml(r.provider)}</span>
+              <span class="response-variant">${escapeHtml(r.variant)}</span>
+              <span style="margin-left:auto;font-size:.7rem;color:var(--text-muted);">${r.latency.toFixed(1)}s</span>
+            </div>
+            <div class="response-text" style="white-space:pre-wrap;font-size:.8rem;max-height:150px;overflow-y:auto;">${escapeHtml(r.text)}</div>
+          </div>`;
+      }
+      html += '</div>';
+    }
+
+    if (run.critiques && run.critiques.length) {
+      html += `<h3 style="margin:1rem 0 .5rem;font-size:.95rem;">🛡 Peer Reviews (${run.critiques.length})</h3>`;
+      for (const c of run.critiques) {
+        const status = c.is_validated ? '✅ VALIDATED' : `⚠️ ${c.issues.length} issues`;
+        html += `<div style="background:var(--bg-input);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:.5rem;margin-bottom:.5rem;font-size:.8rem;">
+          <strong>${escapeHtml(c.reviewer)} → ${escapeHtml(c.reviewee)}</strong>: ${status}
+        </div>`;
+      }
+    }
+
+    if (run.audit_trail && run.audit_trail.length) {
+      html += `<h3 style="margin:1rem 0 .5rem;font-size:.95rem;">📋 Audit Trail</h3><ul style="font-size:.8rem;color:var(--text-secondary);padding-left:1.2rem;">`;
+      for (const step of run.audit_trail) {
+        html += `<li style="margin-bottom:.25rem;">${escapeHtml(step)}</li>`;
+      }
+      html += '</ul>';
+    }
+
+    $('#historyModalBody').innerHTML = html;
+    $('#historyModalOverlay').classList.add('open');
+    $('#historyModal').classList.add('open');
+  } catch (err) {
+    toast(`Failed to load run: ${err.message}`, 'error');
+  }
+}
+
+function closeHistoryModal() {
+  $('#historyModalOverlay').classList.remove('open');
+  $('#historyModal').classList.remove('open');
+}
+
+async function deleteHistoryRun(runId) {
+  try {
+    await fetch(`/api/history/${runId}`, { method: 'DELETE' });
+    toast('Run deleted.', 'success');
+    loadHistory();
+  } catch (err) {
+    toast(`Failed to delete: ${err.message}`, 'error');
+  }
+}
+
+async function clearHistory() {
+  if (!confirm('Delete all run history?')) return;
+  try {
+    const res = await fetch('/api/history', { method: 'DELETE' });
+    const data = await res.json();
+    toast(`Deleted ${data.deleted} run(s).`, 'success');
+    loadHistory();
+  } catch (err) {
+    toast(`Failed to clear: ${err.message}`, 'error');
+  }
+}
+
+/* ----------------------------------------------------------------
    RUN PIPELINE
    ---------------------------------------------------------------- */
 async function handleRun() {
@@ -1555,6 +1854,7 @@ async function handleRun() {
   state.eventCount = 0;
   state.responseCount = 0;
   state.startTime = performance.now();
+  state.streamingCards = {};
 
   // UI updates
   dom.runBtn.classList.add('loading');
@@ -1583,6 +1883,9 @@ async function handleRun() {
     embedding_model: state.settings.embedding_model,
     stability_threshold: state.settings.stability_threshold,
     max_reruns: state.settings.max_reruns,
+    max_concurrent: state.settings.max_concurrent,
+    max_retries: state.settings.max_retries,
+    enable_streaming: state.settings.enable_streaming,
   };
 
   try {
@@ -1630,6 +1933,13 @@ function processEvent(evt) {
   // Skip heartbeats
   if (type === 'HEARTBEAT' || type === 'STREAM_END') return;
 
+  // Skip TOKEN_CHUNK from event feed (too noisy) but still process it
+  if (type === 'TOKEN_CHUNK' && payload) {
+    handleTokenChunk(payload);
+    activateStage(type);
+    return;
+  }
+
   // Debug logging
   console.log(`[D-MMCE] ${type}`, { message: message?.substring(0, 80), hasPayload: !!payload, payloadKeys: payload ? Object.keys(payload) : null });
 
@@ -1639,8 +1949,9 @@ function processEvent(evt) {
   // Add to feed
   addEvent(type, message);
 
-  // Render model response card
+  // Render model response card (finalize streaming card if it exists)
   if (type === 'MODEL_RESPONSE' && payload && payload.text) {
+    finalizeStreamingCard(payload);
     addResponseCard(payload);
   }
 
@@ -1771,8 +2082,12 @@ dom.queryInput.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && dom.settingsPanel.classList.contains('open')) {
-    toggleSettings();
+  if (e.key === 'Escape') {
+    if ($('#historyModal').classList.contains('open')) {
+      closeHistoryModal();
+    } else if (dom.settingsPanel.classList.contains('open')) {
+      toggleSettings();
+    }
   }
 });
 
@@ -1793,6 +2108,7 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
   loadProviders();
   refreshOllamaModels();
+  loadHistory();
 });
 </script>
 </body>

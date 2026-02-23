@@ -42,6 +42,50 @@ class MockProvider(ModelProvider):
         return self._available
 
 
+class MockStreamingProvider(ModelProvider):
+    """Mock provider that supports streaming (token-by-token)."""
+
+    def __init__(self, name: str = "mock-stream", response_text: str = "Hello world") -> None:
+        self.name = name
+        self._response_text = response_text
+        self.streamed_tokens: list[str] = []
+
+    async def _call(self, prompt: str) -> tuple[str, dict[str, Any]]:
+        return self._response_text, {}
+
+    async def _call_stream(self, prompt: str, on_token=None) -> tuple[str, dict[str, Any]]:
+        tokens = list(self._response_text)  # character-by-character
+        self.streamed_tokens = []
+        for tok in tokens:
+            self.streamed_tokens.append(tok)
+            if on_token:
+                on_token(tok)
+            await asyncio.sleep(0.001)
+        return self._response_text, {"streamed": True}
+
+    async def is_available(self) -> bool:
+        return True
+
+
+class FlakyProvider(ModelProvider):
+    """Fails N times then succeeds. For testing retry logic."""
+
+    def __init__(self, name: str = "flaky", response_text: str = "Success!", fail_count: int = 2) -> None:
+        self.name = name
+        self._response_text = response_text
+        self._fail_count = fail_count
+        self.call_count = 0
+
+    async def _call(self, prompt: str) -> tuple[str, dict[str, Any]]:
+        self.call_count += 1
+        if self.call_count <= self._fail_count:
+            raise ConnectionError(f"Flaky failure #{self.call_count}")
+        return self._response_text, {"attempt": self.call_count}
+
+    async def is_available(self) -> bool:
+        return True
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

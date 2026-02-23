@@ -32,6 +32,7 @@ from d_mmce.observer import Event
 from d_mmce.orchestrator import D_MMCE
 from d_mmce.providers import ProviderFactory
 from d_mmce.providers.ollama_provider import OllamaProvider
+from d_mmce.history import RunHistoryDB
 
 # ------------------------------------------------------------------ #
 #  Logging
@@ -58,6 +59,11 @@ app = FastAPI(title="D-MMCE", version="1.0.0")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 # ------------------------------------------------------------------ #
+#  History database
+# ------------------------------------------------------------------ #
+history_db = RunHistoryDB()
+
+# ------------------------------------------------------------------ #
 #  Pydantic request / response models
 # ------------------------------------------------------------------ #
 
@@ -69,6 +75,9 @@ class QueryRequest(BaseModel):
     embedding_model: str = "all-MiniLM-L6-v2"
     stability_threshold: float = 0.85
     max_reruns: int = 3
+    max_concurrent: int = 4
+    max_retries: int = 2
+    enable_streaming: bool = True
 
 
 class SettingsUpdate(BaseModel):
@@ -201,6 +210,8 @@ async def run_query(req: QueryRequest):
                 logger.info("FINAL_VERDICT: answer_len=%d stability=%.4f",
                             len(payload.get("answer", "")),
                             payload.get("stability_score", 0))
+            elif event.event_type.name == "TOKEN_CHUNK":
+                pass  # don't log individual tokens — too noisy
             else:
                 logger.info("Event: %s — %s", event.event_type.name, event.message[:100])
             events_queue.put_nowait(event_data)
@@ -265,6 +276,10 @@ async def run_query(req: QueryRequest):
             stability_threshold=req.stability_threshold,
             max_stability_reruns=req.max_reruns,
             enable_logging_observer=False,
+            max_concurrent_tasks=req.max_concurrent,
+            max_retries=req.max_retries,
+            enable_streaming=req.enable_streaming,
+            history_db=history_db,
         )
 
         # Subscribe to all events
@@ -333,6 +348,45 @@ async def run_query(req: QueryRequest):
         yield f"data: {json.dumps({'type': 'STREAM_END', 'message': 'Done', 'payload': {}})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ------------------------------------------------------------------ #
+#  History API (Feature 5)
+# ------------------------------------------------------------------ #
+
+@app.get("/api/history")
+async def list_history(limit: int = 50, offset: int = 0):
+    """Return a paginated list of past runs (newest first)."""
+    runs = await history_db.list_runs(limit=limit, offset=offset)
+    total = await history_db.count_runs()
+    return {"runs": runs, "total": total}
+
+
+@app.get("/api/history/{run_id}")
+async def get_history_run(run_id: str):
+    """Return full details for a single historical run."""
+    run = await history_db.get_run(run_id)
+    if run is None:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=404, content={"error": "Run not found"})
+    return run
+
+
+@app.delete("/api/history/{run_id}")
+async def delete_history_run(run_id: str):
+    """Delete a single historical run."""
+    deleted = await history_db.delete_run(run_id)
+    if not deleted:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=404, content={"error": "Run not found"})
+    return {"status": "ok", "message": f"Run {run_id} deleted."}
+
+
+@app.delete("/api/history")
+async def clear_history():
+    """Delete all historical runs."""
+    count = await history_db.clear_all()
+    return {"status": "ok", "deleted": count}
 
 
 # ------------------------------------------------------------------ #
