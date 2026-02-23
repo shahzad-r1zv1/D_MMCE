@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
 from typing import Sequence
 
@@ -74,9 +75,10 @@ def _penalty_from_issues(issues: list[str], is_validated: bool) -> float:
 class PeerReviewer:
     """Cross-examination module that generates a :class:`ContradictionMatrix`.
 
-    For every unique pair of providers, the reviewer asks provider A to
-    critique provider B's *best* response (the one for the ``"original"``
-    variant, or the first available).
+    In **single-reviewer mode** (default), a single designated model
+    performs all critiques.  The ``reviewer`` field of each
+    :class:`Critique` is set to the **actual** reviewing model's name,
+    and ``reviewee`` indicates which provider's response was evaluated.
 
     Parameters
     ----------
@@ -86,22 +88,59 @@ class PeerReviewer:
         pass the same pool to do round-robin reviews.
     event_bus : EventBus, optional
         Publish :pydata:`EventType.PEER_CRITIQUE` events.
+    max_retries : int
+        Number of retries for each critique call (default ``2``).
+    retry_base_delay : float
+        Base delay in seconds for jittered exponential backoff (default ``2.0``).
+    request_timeout : float
+        Per-request timeout in seconds (default ``120.0``).
     """
 
     def __init__(
         self,
         review_provider: ModelProvider,
         event_bus: EventBus | None = None,
+        max_retries: int = 2,
+        retry_base_delay: float = 2.0,
+        request_timeout: float = 120.0,
     ) -> None:
         self._reviewer = review_provider
         self._bus = event_bus
+        self._max_retries = max_retries
+        self._retry_base_delay = retry_base_delay
+        self._request_timeout = request_timeout
+
+    async def _call_with_retry(self, prompt: str, variant: str) -> ModelResponse:
+        """Call the review provider with timeout and jittered exponential backoff."""
+        last_exc: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                coro = self._reviewer.generate(prompt, variant=variant)
+                return await asyncio.wait_for(coro, timeout=self._request_timeout)
+            except Exception as exc:
+                last_exc = exc
+                if attempt < self._max_retries:
+                    jitter = random.uniform(0, self._retry_base_delay)
+                    delay = self._retry_base_delay * (2 ** attempt) + jitter
+                    logger.warning(
+                        "Peer-review retry %d/%d for %s — %s (delay %.1fs)",
+                        attempt + 1, self._max_retries,
+                        self._reviewer.name, type(exc).__name__, delay,
+                    )
+                    await asyncio.sleep(delay)
+        raise last_exc  # type: ignore[misc]
 
     async def review(
         self,
         responses: Sequence[ModelResponse],
         providers: Sequence[ModelProvider] | None = None,
     ) -> ContradictionMatrix:
-        """Run pairwise peer reviews and return the contradiction matrix.
+        """Run peer reviews and return the contradiction matrix.
+
+        In single-reviewer mode each unique provider's *best* response
+        is reviewed once by the designated ``review_provider``.  The
+        ``Critique.reviewer`` field is set to the **actual** model name,
+        and ``Critique.critique_source`` is also populated.
 
         Parameters
         ----------
@@ -124,48 +163,48 @@ class PeerReviewer:
         provider_names = list(best_by_provider.keys())
         matrix = ContradictionMatrix()
 
-        # Build critique tasks for all pairs
-        tasks: list[tuple[str, str, asyncio.Task]] = []
-        for i, reviewer_name in enumerate(provider_names):
-            for j, reviewee_name in enumerate(provider_names):
-                if i == j:
-                    continue
-                prompt = PEER_REVIEW_PROMPT.format(
-                    solution=best_by_provider[reviewee_name].text
-                )
-                task = asyncio.create_task(
-                    self._reviewer.generate(prompt, variant="peer_review")
-                )
-                tasks.append((reviewer_name, reviewee_name, task))
+        # Build critique tasks — one per reviewee (single-reviewer mode)
+        tasks: list[tuple[str, asyncio.Task]] = []
+        for reviewee_name in provider_names:
+            prompt = PEER_REVIEW_PROMPT.format(
+                solution=best_by_provider[reviewee_name].text
+            )
+            task = asyncio.create_task(
+                self._call_with_retry(prompt, variant="peer_review")
+            )
+            tasks.append((reviewee_name, task))
 
         # Gather all critique results
-        for reviewer_name, reviewee_name, task in tasks:
+        actual_reviewer = self._reviewer.name
+        for reviewee_name, task in tasks:
             try:
                 result: ModelResponse = await task
                 is_validated, issues = _parse_critique(result.text)
                 penalty = _penalty_from_issues(issues, is_validated)
 
                 critique = Critique(
-                    reviewer=reviewer_name,
+                    reviewer=actual_reviewer,
                     reviewee=reviewee_name,
                     critique_text=result.text,
                     is_validated=is_validated,
                     issues=issues,
+                    critique_source=actual_reviewer,
                 )
                 matrix.critiques.append(critique)
-                matrix.scores[(reviewer_name, reviewee_name)] = penalty
+                matrix.scores[(actual_reviewer, reviewee_name)] = penalty
 
                 if self._bus:
                     self._bus.publish(
                         Event(
                             EventType.PEER_CRITIQUE,
                             message=(
-                                f"{reviewer_name} → {reviewee_name}: "
+                                f"{actual_reviewer} reviewed {reviewee_name}: "
                                 f"{'VALIDATED' if is_validated else f'{len(issues)} issues'}"
                             ),
                             payload={
-                                "reviewer": reviewer_name,
+                                "reviewer": actual_reviewer,
                                 "reviewee": reviewee_name,
+                                "critique_source": actual_reviewer,
                                 "penalty": penalty,
                                 "issues": issues,
                             },
@@ -173,10 +212,10 @@ class PeerReviewer:
                     )
             except Exception:
                 logger.warning(
-                    "Critique %s→%s failed", reviewer_name, reviewee_name,
+                    "Critique %s→%s failed", actual_reviewer, reviewee_name,
                     exc_info=True,
                 )
-                matrix.scores[(reviewer_name, reviewee_name)] = 0.5  # neutral
+                matrix.scores[(actual_reviewer, reviewee_name)] = 0.5  # neutral
 
         return matrix
 

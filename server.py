@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -59,6 +59,36 @@ app = FastAPI(title="D-MMCE", version="1.0.0")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
 # ------------------------------------------------------------------ #
+#  Security — settings endpoint protection
+# ------------------------------------------------------------------ #
+_PRODUCTION_MODE = os.getenv("D_MMCE_PRODUCTION_MODE", "").lower() in ("1", "true", "yes")
+_API_AUTH_TOKEN = os.getenv("D_MMCE_API_AUTH_TOKEN", "")
+_settings_audit_log = logging.getLogger("d_mmce.settings_audit")
+
+
+def _verify_settings_auth(authorization: str | None) -> None:
+    """Raise 403 if settings access is not authorised.
+
+    In **production mode** (``D_MMCE_PRODUCTION_MODE=1``):
+    * If ``D_MMCE_API_AUTH_TOKEN`` is set, the caller must supply it via
+      ``Authorization: Bearer <token>``.
+    * If no token is configured, the settings endpoints are **disabled**.
+    """
+    if not _PRODUCTION_MODE:
+        return  # open access in development
+    if not _API_AUTH_TOKEN:
+        raise HTTPException(
+            status_code=403,
+            detail="Settings endpoint disabled in production mode "
+                   "(set D_MMCE_API_AUTH_TOKEN to enable).",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token.")
+    token = authorization[len("Bearer "):]
+    if token != _API_AUTH_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid auth token.")
+
+# ------------------------------------------------------------------ #
 #  History database
 # ------------------------------------------------------------------ #
 history_db = RunHistoryDB()
@@ -77,6 +107,7 @@ class QueryRequest(BaseModel):
     max_reruns: int = 3
     max_concurrent: int = 4
     max_retries: int = 2
+    request_timeout: float = 120.0
     enable_streaming: bool = True
 
 
@@ -149,8 +180,10 @@ async def list_ollama_models():
 
 
 @app.get("/api/settings")
-async def get_settings():
+async def get_settings(authorization: str | None = Header(default=None)):
     """Return current env-var configuration (redacted)."""
+    _verify_settings_auth(authorization)
+
     def _redact(val: str | None) -> str:
         if not val:
             return ""
@@ -167,17 +200,29 @@ async def get_settings():
 
 
 @app.post("/api/settings")
-async def update_settings(settings: SettingsUpdate):
+async def update_settings(
+    settings: SettingsUpdate,
+    authorization: str | None = Header(default=None),
+):
     """Update environment variables at runtime (does NOT persist to .env)."""
+    _verify_settings_auth(authorization)
+
+    changed: list[str] = []
     if settings.openai_api_key is not None:
         os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+        changed.append("OPENAI_API_KEY")
     if settings.anthropic_api_key is not None:
         os.environ["ANTHROPIC_API_KEY"] = settings.anthropic_api_key
+        changed.append("ANTHROPIC_API_KEY")
     if settings.google_api_key is not None:
         os.environ["GOOGLE_API_KEY"] = settings.google_api_key
+        changed.append("GOOGLE_API_KEY")
     if settings.ollama_base_url is not None:
         os.environ["OLLAMA_BASE_URL"] = settings.ollama_base_url
-    return {"status": "ok", "message": "Settings updated (runtime only)."}
+        changed.append("OLLAMA_BASE_URL")
+
+    _settings_audit_log.info("Settings updated: %s", changed)
+    return {"status": "ok", "message": "Settings updated (runtime only).", "changed": changed}
 
 
 @app.post("/api/run")
@@ -201,6 +246,7 @@ async def run_query(req: QueryRequest):
                 "message": event.message,
                 "payload": payload,
                 "timestamp": time.time(),
+                "run_id": event.run_id,
             }
             if event.event_type.name == "MODEL_RESPONSE":
                 logger.info("MODEL_RESPONSE: provider=%s variant=%s text_len=%d",
@@ -278,6 +324,7 @@ async def run_query(req: QueryRequest):
             enable_logging_observer=False,
             max_concurrent_tasks=req.max_concurrent,
             max_retries=req.max_retries,
+            request_timeout=req.request_timeout,
             enable_streaming=req.enable_streaming,
             history_db=history_db,
         )
@@ -297,8 +344,11 @@ async def run_query(req: QueryRequest):
                 result_holder["verdict"] = {
                     "answer": verdict.answer,
                     "stability_score": verdict.stability_score,
+                    "confidence_score": verdict.confidence_score,
                     "num_reruns": verdict.num_reruns,
                     "audit_trail": verdict.audit_trail,
+                    "run_id": verdict.run_id,
+                    "stage_timings": verdict.stage_timings,
                 }
                 logger.info("Pipeline completed: stability=%.4f, reruns=%d, answer_len=%d",
                             verdict.stability_score, verdict.num_reruns, len(verdict.answer))

@@ -36,6 +36,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
+import time
+import uuid
 from typing import Any, Sequence
 
 from d_mmce.meta_judge import MetaJudge
@@ -44,10 +47,51 @@ from d_mmce.peer_reviewer import PeerReviewer
 from d_mmce.prompt_perturbator import PromptPerturbator
 from d_mmce.providers.base import ModelProvider
 from d_mmce.providers.factory import ProviderFactory
-from d_mmce.schemas import FinalVerdict, ModelResponse
+from d_mmce.schemas import FailureCategory, FinalVerdict, ModelResponse
 from d_mmce.semantic_clusterer import SemanticClusterer
 
 logger = logging.getLogger(__name__)
+
+
+# ------------------------------------------------------------------ #
+#  Failure classification                                             #
+# ------------------------------------------------------------------ #
+
+def classify_failure(exc: Exception) -> FailureCategory:
+    """Categorise an exception into a retry-relevant failure bucket."""
+    name = type(exc).__name__.lower()
+    msg = str(exc).lower()
+
+    # Timeout
+    if "timeout" in name or "timeout" in msg:
+        return FailureCategory.TIMEOUT
+    if isinstance(exc, asyncio.TimeoutError):
+        return FailureCategory.TIMEOUT
+
+    # Auth
+    if "auth" in name or "auth" in msg or "401" in msg or "403" in msg:
+        return FailureCategory.AUTH
+    if "permission" in msg or "api key" in msg or "invalid key" in msg:
+        return FailureCategory.AUTH
+
+    # Quota / rate-limit
+    if "429" in msg or "rate" in msg or "quota" in msg or "limit" in msg:
+        return FailureCategory.QUOTA
+
+    # Non-retryable
+    if "400" in msg or "404" in msg or "invalid" in name:
+        return FailureCategory.PERMANENT
+
+    return FailureCategory.TRANSIENT
+
+
+def _is_retryable(category: FailureCategory) -> bool:
+    """Return ``True`` if the failure category warrants a retry."""
+    return category in (
+        FailureCategory.TIMEOUT,
+        FailureCategory.QUOTA,
+        FailureCategory.TRANSIENT,
+    )
 
 
 class D_MMCE:
@@ -90,6 +134,7 @@ class D_MMCE:
         max_concurrent_tasks: int = 4,
         max_retries: int = 2,
         retry_base_delay: float = 2.0,
+        request_timeout: float = 120.0,
         # --- Streaming (Feature 3) ---
         enable_streaming: bool = True,
         # --- History (Feature 5) ---
@@ -116,12 +161,16 @@ class D_MMCE:
         self._semaphore = asyncio.Semaphore(max_concurrent_tasks)
         self._max_retries = max_retries
         self._retry_base_delay = retry_base_delay
+        self._request_timeout = request_timeout
 
         # --- Streaming ---
         self._enable_streaming = enable_streaming
 
         # --- History ---
         self._history_db = history_db
+
+        # --- Run tracking ---
+        self._current_run_id = ""
 
         # --- Eagerly build components if providers were given ---
         if self._providers:
@@ -139,7 +188,11 @@ class D_MMCE:
 
         self._perturbator = PromptPerturbator(event_bus=self._bus)
         self._peer_reviewer = PeerReviewer(
-            review_provider=review_provider, event_bus=self._bus
+            review_provider=review_provider,
+            event_bus=self._bus,
+            max_retries=self._max_retries,
+            retry_base_delay=self._retry_base_delay,
+            request_timeout=self._request_timeout,
         )
         self._clusterer = SemanticClusterer(
             model_name=self._embedding_model, event_bus=self._bus
@@ -213,7 +266,7 @@ class D_MMCE:
         prompt: str,
         variant: str,
     ) -> ModelResponse:
-        """Call a provider with semaphore gating, streaming, and exponential backoff retry."""
+        """Call a provider with semaphore gating, streaming, timeout, and jittered exponential backoff retry."""
         last_exc: Exception | None = None
 
         for attempt in range(self._max_retries + 1):
@@ -231,23 +284,37 @@ class D_MMCE:
                                             "variant": variant,
                                             "token": token,
                                         },
+                                        run_id=self._current_run_id,
                                     )
                                 )
-                        return await provider.generate_stream(
+                        coro = provider.generate_stream(
                             prompt, variant=variant, on_token=_on_token
                         )
                     else:
-                        return await provider.generate(prompt, variant=variant)
+                        coro = provider.generate(prompt, variant=variant)
+
+                    return await asyncio.wait_for(coro, timeout=self._request_timeout)
             except Exception as exc:
                 last_exc = exc
-                if attempt < self._max_retries:
-                    delay = self._retry_base_delay * (2 ** attempt)
+                category = classify_failure(exc)
+
+                if attempt < self._max_retries and _is_retryable(category):
+                    # Jittered exponential backoff
+                    jitter = random.uniform(0, self._retry_base_delay)
+                    delay = self._retry_base_delay * (2 ** attempt) + jitter
                     logger.warning(
-                        "Retry %d/%d for %s::%s after %s (delay %.1fs)",
+                        "Retry %d/%d for %s::%s — %s [%s] (delay %.1fs)",
                         attempt + 1, self._max_retries, provider.name,
-                        variant, type(exc).__name__, delay,
+                        variant, type(exc).__name__, category.name, delay,
                     )
                     await asyncio.sleep(delay)
+                elif not _is_retryable(category):
+                    logger.warning(
+                        "Non-retryable failure for %s::%s — %s [%s]",
+                        provider.name, variant,
+                        type(exc).__name__, category.name,
+                    )
+                    break
 
         raise last_exc  # type: ignore[misc]
 
@@ -291,6 +358,7 @@ class D_MMCE:
                                 "latency": round(r.latency, 2),
                                 "chars": len(r.text),
                             },
+                            run_id=self._current_run_id,
                         )
                     )
             except Exception as exc:
@@ -323,7 +391,8 @@ class D_MMCE:
         Returns
         -------
         FinalVerdict
-            The globally optimal answer, stability score, and audit trail.
+            The globally optimal answer, stability score, confidence score,
+            stage timings, and audit trail.
 
         How the pipeline distinguishes Local from Global Optimality
         -----------------------------------------------------------
@@ -344,13 +413,21 @@ class D_MMCE:
            Divergence flags the answer as a potential **Local Optimum**.
         """
         audit_trail: list[str] = []
+        stage_timings: dict[str, float] = {}
+
+        # Generate a unique run ID for this pipeline execution
+        self._current_run_id = uuid.uuid4().hex[:12]
+        logger.info("Pipeline run_id=%s started for query=%r",
+                     self._current_run_id, query[:80])
 
         # 0. Ensure providers are resolved (auto-discovery if needed)
         await self._ensure_providers()
 
         # 1. Diversity injection
+        t0 = time.perf_counter()
         perturbed = self._perturbator.perturb(query)
         variants = perturbed.variants()
+        stage_timings["diversify"] = round(time.perf_counter() - t0, 4)
         audit_trail.append(f"Generated {len(variants)} prompt variants.")
 
         # 2. Filter available providers
@@ -363,6 +440,8 @@ class D_MMCE:
             return FinalVerdict(
                 answer="ERROR: No providers available. Configure API keys or start Ollama.",
                 stability_score=0.0,
+                run_id=self._current_run_id,
+                stage_timings=stage_timings,
                 audit_trail=audit_trail,
             )
 
@@ -378,7 +457,11 @@ class D_MMCE:
         logger.info("Review provider: %s | Meta-Judge pool: %s",
                      review_provider.name, [p.name for p in providers])
         self._peer_reviewer = PeerReviewer(
-            review_provider=review_provider, event_bus=self._bus
+            review_provider=review_provider,
+            event_bus=self._bus,
+            max_retries=self._max_retries,
+            retry_base_delay=self._retry_base_delay,
+            request_timeout=self._request_timeout,
         )
         self._meta_judge = MetaJudge(
             providers=providers,
@@ -389,7 +472,9 @@ class D_MMCE:
         )
 
         # 3. Parallel inference via asyncio.gather()
+        t0 = time.perf_counter()
         responses = await self._parallel_inference(providers, variants)
+        stage_timings["infer"] = round(time.perf_counter() - t0, 4)
         audit_trail.append(
             f"Collected {len(responses)} responses from "
             f"{len(providers)} providers × {len(variants)} variants."
@@ -399,25 +484,74 @@ class D_MMCE:
             return FinalVerdict(
                 answer="ERROR: No responses received from any provider.",
                 stability_score=0.0,
+                run_id=self._current_run_id,
+                stage_timings=stage_timings,
                 audit_trail=audit_trail,
             )
 
         # 4. Peer review (cross-examination)
+        t0 = time.perf_counter()
         matrix = await self._peer_reviewer.review(responses, providers)
+        stage_timings["review"] = round(time.perf_counter() - t0, 4)
         audit_trail.append(
             f"Peer review complete: {len(matrix.critiques)} critiques generated."
         )
 
         # 5. Semantic clustering
+        t0 = time.perf_counter()
         cluster = self._clusterer.cluster(responses)
+        stage_timings["cluster"] = round(time.perf_counter() - t0, 4)
         audit_trail.append(
             f"Consensus cluster: {len(cluster.member_responses)} members, "
             f"{len(cluster.outliers)} outliers discarded."
         )
 
+        # Handle insufficient consensus
+        if cluster.insufficient_consensus:
+            audit_trail.append(
+                "WARNING: Insufficient consensus — cluster too small or ratio "
+                f"too low ({cluster.consensus_ratio:.2f})."
+            )
+            return FinalVerdict(
+                answer=(
+                    "INSUFFICIENT CONSENSUS: The models could not reach "
+                    "agreement. The responses were too diverse to form a "
+                    "reliable consensus cluster."
+                ),
+                stability_score=0.0,
+                confidence_score=0.0,
+                run_id=self._current_run_id,
+                stage_timings=stage_timings,
+                audit_trail=audit_trail,
+            )
+
         # 6. Meta-Judge synthesis + Stability Loop
+        t0 = time.perf_counter()
         verdict = await self._meta_judge.synthesize(cluster, matrix)
+        stage_timings["synthesize"] = round(time.perf_counter() - t0, 4)
         verdict.audit_trail = audit_trail + verdict.audit_trail
+        verdict.run_id = self._current_run_id
+        verdict.stage_timings = stage_timings
+
+        # 7. Compute composite confidence score
+        total_responses = len(cluster.member_responses) + len(cluster.outliers)
+        consensus_strength = (
+            len(cluster.member_responses) / total_responses
+            if total_responses > 0 else 0.0
+        )
+        avg_penalty = (
+            sum(matrix.scores.values()) / len(matrix.scores)
+            if matrix.scores else 0.0
+        )
+        contradiction_factor = 1.0 - avg_penalty
+        stability = verdict.stability_score
+
+        verdict.confidence_score = round(
+            0.4 * consensus_strength
+            + 0.3 * contradiction_factor
+            + 0.3 * stability,
+            4,
+        )
 
         if self._bus:
             self._bus.publish(
@@ -425,18 +559,22 @@ class D_MMCE:
                     EventType.FINAL_VERDICT,
                     message=(
                         f"Final verdict: stability={verdict.stability_score:.4f}, "
+                        f"confidence={verdict.confidence_score:.4f}, "
                         f"reruns={verdict.num_reruns}"
                     ),
                     payload={
                         "answer": verdict.answer,
                         "stability_score": verdict.stability_score,
+                        "confidence_score": verdict.confidence_score,
                         "num_reruns": verdict.num_reruns,
                         "audit_trail": verdict.audit_trail,
+                        "stage_timings": verdict.stage_timings,
                     },
+                    run_id=self._current_run_id,
                 )
             )
 
-        # 7. Persist to history database (Feature 5)
+        # 8. Persist to history database (Feature 5)
         if self._history_db:
             try:
                 await self._history_db.save_run(
