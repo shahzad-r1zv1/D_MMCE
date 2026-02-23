@@ -4,12 +4,15 @@ Run with:  pytest tests/test_unit.py -v
 """
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from d_mmce.observer import Event, EventBus, EventType
 from d_mmce.prompt_perturbator import PromptPerturbator
 from d_mmce.schemas import (
     ContradictionMatrix,
+    FailureCategory,
     FinalVerdict,
     ModelResponse,
     PerturbedPrompt,
@@ -68,6 +71,20 @@ class TestFinalVerdict:
         assert v.stability_score == 1.0
         assert v.num_reruns == 0
         assert v.audit_trail == []
+        assert v.run_id == ""
+        assert v.stage_timings == {}
+        assert v.confidence_score == 0.0
+
+    def test_run_id_and_timings(self):
+        v = FinalVerdict(
+            answer="ok",
+            run_id="abc123",
+            stage_timings={"infer": 1.5, "review": 0.8},
+            confidence_score=0.85,
+        )
+        assert v.run_id == "abc123"
+        assert v.stage_timings["infer"] == 1.5
+        assert v.confidence_score == 0.85
 
 
 # =====================================================================
@@ -268,4 +285,206 @@ class TestProviderFactory:
 
         p = ProviderFactory.create("ollama:test-model")
         assert p.name == "ollama:test-model"
+
+
+# =====================================================================
+# FailureCategory tests
+# =====================================================================
+
+
+class TestFailureCategory:
+    def test_enum_members(self):
+        assert FailureCategory.TIMEOUT.name == "TIMEOUT"
+        assert FailureCategory.AUTH.name == "AUTH"
+        assert FailureCategory.QUOTA.name == "QUOTA"
+        assert FailureCategory.TRANSIENT.name == "TRANSIENT"
+        assert FailureCategory.PERMANENT.name == "PERMANENT"
+
+
+# =====================================================================
+# classify_failure tests
+# =====================================================================
+
+
+class TestClassifyFailure:
+    def test_timeout_error(self):
+        from d_mmce.orchestrator import classify_failure
+
+        assert classify_failure(asyncio.TimeoutError()) == FailureCategory.TIMEOUT
+
+    def test_timeout_in_message(self):
+        from d_mmce.orchestrator import classify_failure
+
+        assert classify_failure(Exception("Request timeout")) == FailureCategory.TIMEOUT
+
+    def test_auth_error(self):
+        from d_mmce.orchestrator import classify_failure
+
+        assert classify_failure(Exception("401 Unauthorized")) == FailureCategory.AUTH
+
+    def test_auth_api_key(self):
+        from d_mmce.orchestrator import classify_failure
+
+        assert classify_failure(Exception("Invalid API key")) == FailureCategory.AUTH
+
+    def test_quota_429(self):
+        from d_mmce.orchestrator import classify_failure
+
+        assert classify_failure(Exception("429 rate limit exceeded")) == FailureCategory.QUOTA
+
+    def test_transient_generic(self):
+        from d_mmce.orchestrator import classify_failure
+
+        assert classify_failure(ConnectionError("connection reset")) == FailureCategory.TRANSIENT
+
+    def test_permanent_400(self):
+        from d_mmce.orchestrator import classify_failure
+
+        assert classify_failure(Exception("400 bad request")) == FailureCategory.PERMANENT
+
+    def test_is_retryable(self):
+        from d_mmce.orchestrator import _is_retryable
+
+        assert _is_retryable(FailureCategory.TIMEOUT) is True
+        assert _is_retryable(FailureCategory.QUOTA) is True
+        assert _is_retryable(FailureCategory.TRANSIENT) is True
+        assert _is_retryable(FailureCategory.AUTH) is False
+        assert _is_retryable(FailureCategory.PERMANENT) is False
+
+
+# =====================================================================
+# Critique schema tests
+# =====================================================================
+
+
+class TestCritique:
+    def test_critique_source_default(self):
+        from d_mmce.schemas import Critique
+
+        c = Critique(reviewer="r", reviewee="e", critique_text="text")
+        assert c.critique_source == ""
+
+    def test_critique_source_set(self):
+        from d_mmce.schemas import Critique
+
+        c = Critique(
+            reviewer="actual-model",
+            reviewee="target",
+            critique_text="ok",
+            critique_source="actual-model",
+        )
+        assert c.critique_source == "actual-model"
+
+
+# =====================================================================
+# ConsensusCluster schema tests
+# =====================================================================
+
+
+class TestConsensusCluster:
+    def test_insufficient_consensus_default(self):
+        from d_mmce.schemas import ConsensusCluster
+
+        cc = ConsensusCluster(centroid_text="test")
+        assert cc.insufficient_consensus is False
+        assert cc.consensus_ratio == 1.0
+
+    def test_insufficient_consensus_flag(self):
+        from d_mmce.schemas import ConsensusCluster
+
+        cc = ConsensusCluster(
+            centroid_text="test",
+            insufficient_consensus=True,
+            consensus_ratio=0.2,
+        )
+        assert cc.insufficient_consensus is True
+        assert cc.consensus_ratio == 0.2
+
+
+# =====================================================================
+# Event run_id tests
+# =====================================================================
+
+
+class TestEventRunId:
+    def test_event_run_id_default(self):
+        evt = Event(EventType.MODEL_RESPONSE, message="test")
+        assert evt.run_id == ""
+
+    def test_event_run_id_set(self):
+        evt = Event(EventType.MODEL_RESPONSE, message="test", run_id="abc123")
+        assert evt.run_id == "abc123"
+
+
+# =====================================================================
+# Peer reviewer parsing edge cases
+# =====================================================================
+
+
+class TestPeerReviewerParsingEdgeCases:
+    def test_empty_string(self):
+        from d_mmce.peer_reviewer import _parse_critique
+
+        ok, issues = _parse_critique("")
+        assert ok is False
+        assert issues == []
+
+    def test_whitespace_only(self):
+        from d_mmce.peer_reviewer import _parse_critique
+
+        ok, issues = _parse_critique("   \n  \n  ")
+        assert ok is False
+        assert issues == []
+
+    def test_validated_with_trailing_text(self):
+        from d_mmce.peer_reviewer import _parse_critique
+
+        ok, issues = _parse_critique("VALIDATED - looks good")
+        assert ok is True
+
+    def test_mixed_bullet_styles(self):
+        from d_mmce.peer_reviewer import _parse_critique
+
+        text = "- First\n* Second\n• Third\n1. Fourth"
+        ok, issues = _parse_critique(text)
+        assert ok is False
+        assert len(issues) == 4
+
+    def test_asterisk_bullets(self):
+        from d_mmce.peer_reviewer import _parse_critique
+
+        text = "* Issue A\n* Issue B"
+        ok, issues = _parse_critique(text)
+        assert ok is False
+        assert len(issues) == 2
+
+    def test_parenthetical_numbering(self):
+        from d_mmce.peer_reviewer import _parse_critique
+
+        text = "1) Error one\n2) Error two"
+        ok, issues = _parse_critique(text)
+        assert ok is False
+        assert len(issues) == 2
+
+
+# =====================================================================
+# Penalty scoring edge cases
+# =====================================================================
+
+
+class TestPenaltyEdgeCases:
+    def test_zero_issues_not_validated(self):
+        from d_mmce.peer_reviewer import _penalty_from_issues
+
+        assert _penalty_from_issues([], False) == 0.0
+
+    def test_two_issues(self):
+        from d_mmce.peer_reviewer import _penalty_from_issues
+
+        assert _penalty_from_issues(["a", "b"], False) == 0.5
+
+    def test_three_issues(self):
+        from d_mmce.peer_reviewer import _penalty_from_issues
+
+        assert _penalty_from_issues(["a", "b", "c"], False) == 0.75
 

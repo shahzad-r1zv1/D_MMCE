@@ -1141,6 +1141,10 @@ a:hover { text-decoration: underline; }
         <div class="metric-label">Re-runs</div>
       </div>
       <div class="metric-card">
+        <div class="metric-value neutral" id="metricConfidence">—</div>
+        <div class="metric-label">Confidence</div>
+      </div>
+      <div class="metric-card">
         <div class="metric-value neutral" id="metricEvents">—</div>
         <div class="metric-label">Events</div>
       </div>
@@ -1148,6 +1152,12 @@ a:hover { text-decoration: underline; }
         <div class="metric-value neutral" id="metricDuration">—</div>
         <div class="metric-label">Duration</div>
       </div>
+    </div>
+
+    <!-- Stage Timings -->
+    <div class="stage-timings" id="stageTimings" style="display:none;">
+      <h4 style="color:var(--text-secondary);margin-bottom:.5rem;font-size:.85rem;text-transform:uppercase;letter-spacing:.05em;">Stage Timings</h4>
+      <div class="metrics-row" id="stageTimingsRow"></div>
     </div>
 
     <!-- Audit trail -->
@@ -2026,8 +2036,30 @@ function showResult(verdict) {
   $('#metricReruns').textContent = verdict.num_reruns;
   $('#metricEvents').textContent = state.eventCount;
 
+  // Confidence score
+  const confidence = verdict.confidence_score ?? 0;
+  const confEl = $('#metricConfidence');
+  confEl.textContent = (confidence * 100).toFixed(0) + '%';
+  confEl.className = 'metric-value ' + (confidence >= 0.7 ? 'good' : confidence >= 0.4 ? 'warn' : 'bad');
+
   const elapsed = ((performance.now() - state.startTime) / 1000).toFixed(1);
   $('#metricDuration').textContent = elapsed + 's';
+
+  // Stage timings
+  const timings = verdict.stage_timings;
+  const timingsContainer = $('#stageTimings');
+  const timingsRow = $('#stageTimingsRow');
+  if (timings && Object.keys(timings).length > 0) {
+    timingsRow.innerHTML = '';
+    const stageLabels = {diversify: '🎯 Diversify', infer: '⚡ Infer', review: '🔍 Review', cluster: '🧩 Cluster', synthesize: '🏆 Synthesize'};
+    for (const [stage, secs] of Object.entries(timings)) {
+      const card = document.createElement('div');
+      card.className = 'metric-card';
+      card.innerHTML = `<div class="metric-value neutral">${Number(secs).toFixed(2)}s</div><div class="metric-label">${stageLabels[stage] || stage}</div>`;
+      timingsRow.appendChild(card);
+    }
+    timingsContainer.style.display = 'block';
+  }
 
   // Audit trail
   const list = $('#auditList');

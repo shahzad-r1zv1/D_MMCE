@@ -41,6 +41,7 @@ class Event:
     event_type: EventType
     payload: dict[str, Any] = field(default_factory=dict)
     message: str = ""
+    run_id: str = ""
 
 
 class EventObserver(Protocol):

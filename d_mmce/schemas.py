@@ -9,7 +9,18 @@ component remains loosely coupled and independently testable.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import Any
+
+
+class FailureCategory(Enum):
+    """Classification of API call failures for retry decisions."""
+
+    TIMEOUT = auto()
+    AUTH = auto()
+    QUOTA = auto()
+    TRANSIENT = auto()
+    PERMANENT = auto()
 
 
 @dataclass(frozen=True)
@@ -67,11 +78,16 @@ class Critique:
     """A single peer-review critique of one model response by another model.
 
     Attributes:
-        reviewer:       Provider name of the reviewing model.
-        reviewee:       Provider name of the model being reviewed.
-        critique_text:  Raw critique text produced by the reviewer.
-        is_validated:   ``True`` if the reviewer found no issues (responded VALIDATED).
-        issues:         List of identified issues / failure points.
+        reviewer:         Label for the reviewing perspective (may differ from
+                          the model actually performing the review in
+                          single-reviewer mode).
+        reviewee:         Provider name of the model being reviewed.
+        critique_text:    Raw critique text produced by the reviewer.
+        is_validated:     ``True`` if the reviewer found no issues (responded VALIDATED).
+        issues:           List of identified issues / failure points.
+        critique_source:  Name of the model that actually performed the review
+                          (in single-reviewer mode this is the designated review
+                          provider for every critique).
     """
 
     reviewer: str
@@ -79,6 +95,7 @@ class Critique:
     critique_text: str
     is_validated: bool = False
     issues: list[str] = field(default_factory=list)
+    critique_source: str = ""
 
 
 @dataclass
@@ -107,16 +124,23 @@ class ConsensusCluster:
     """Result of the semantic clustering step.
 
     Attributes:
-        centroid_text:     The response text closest to the cluster centroid.
-        member_responses:  Responses that belong to the consensus cluster.
-        outliers:          Responses that were discarded as local optima.
-        centroid_embedding: The embedding vector of the centroid (used for stability checks).
+        centroid_text:          The response text closest to the cluster centroid.
+        member_responses:       Responses that belong to the consensus cluster.
+        outliers:               Responses that were discarded as local optima.
+        centroid_embedding:     The embedding vector of the centroid (used for stability checks).
+        insufficient_consensus: ``True`` when the cluster does not meet the
+                                minimum size/ratio gates — i.e. no strong
+                                consensus could be established.
+        consensus_ratio:        Fraction of total responses in the consensus
+                                cluster (0.0 – 1.0).
     """
 
     centroid_text: str
     member_responses: list[ModelResponse] = field(default_factory=list)
     outliers: list[ModelResponse] = field(default_factory=list)
     centroid_embedding: list[float] | None = None
+    insufficient_consensus: bool = False
+    consensus_ratio: float = 1.0
 
 
 @dataclass
@@ -127,15 +151,25 @@ class FinalVerdict:
     is recorded so the caller can inspect the system's convergence behaviour.
 
     Attributes:
-        answer:           The synthesised final answer.
-        stability_score:  Cosine similarity between the last two synthesis
-                          rounds (1.0 = perfectly stable).
-        num_reruns:       How many synthesis re-runs were required.
-        audit_trail:      Human-readable log of each pipeline stage.
+        answer:            The synthesised final answer.
+        stability_score:   Cosine similarity between the last two synthesis
+                           rounds (1.0 = perfectly stable).
+        num_reruns:        How many synthesis re-runs were required.
+        audit_trail:       Human-readable log of each pipeline stage.
+        run_id:            Unique identifier for this pipeline run.
+        stage_timings:     Wall-clock seconds per pipeline stage
+                           (keys: ``diversify``, ``infer``, ``review``,
+                           ``cluster``, ``synthesize``).
+        confidence_score:  Composite confidence ∈ [0, 1] combining
+                           consensus strength, contradiction penalty,
+                           and stability similarity.
     """
 
     answer: str
     stability_score: float = 1.0
     num_reruns: int = 0
     audit_trail: list[str] = field(default_factory=list)
+    run_id: str = ""
+    stage_timings: dict[str, float] = field(default_factory=dict)
+    confidence_score: float = 0.0
 

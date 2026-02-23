@@ -68,6 +68,46 @@ class TestPeerReviewerIntegration:
         for score in matrix.scores.values():
             assert score == 0.0
 
+    @pytest.mark.asyncio
+    async def test_reviewer_field_matches_actual_provider(self, sample_responses):
+        """In single-reviewer mode, all critiques should name the actual review provider."""
+        reviewer = MockProvider(name="actual-reviewer-model", response_text="VALIDATED")
+        pr = PeerReviewer(review_provider=reviewer)
+        matrix = await pr.review(sample_responses)
+
+        for critique in matrix.critiques:
+            assert critique.reviewer == "actual-reviewer-model"
+            assert critique.critique_source == "actual-reviewer-model"
+
+    @pytest.mark.asyncio
+    async def test_review_events_include_critique_source(self, sample_responses, event_bus):
+        """Events should include the critique_source field."""
+        captured: list[Event] = []
+        event_bus.subscribe(EventType.PEER_CRITIQUE, captured.append)
+
+        reviewer = MockProvider(name="my-reviewer", response_text="VALIDATED")
+        pr = PeerReviewer(review_provider=reviewer, event_bus=event_bus)
+        await pr.review(sample_responses)
+
+        for evt in captured:
+            assert evt.payload["critique_source"] == "my-reviewer"
+
+    @pytest.mark.asyncio
+    async def test_review_with_retry(self, sample_responses):
+        """PeerReviewer should retry on transient failures."""
+        from tests.conftest import FlakyProvider
+
+        flaky = FlakyProvider(name="flaky-reviewer", response_text="VALIDATED", fail_count=1)
+        pr = PeerReviewer(
+            review_provider=flaky,
+            max_retries=2,
+            retry_base_delay=0.01,
+        )
+        matrix = await pr.review(sample_responses)
+
+        # Should succeed after retries
+        assert len(matrix.critiques) > 0
+
 
 # =====================================================================
 # SemanticClusterer integration tests
@@ -394,4 +434,124 @@ class TestE2EPipeline:
 
         # Deterministic → identical synthesis each time → cosine sim ≈ 1.0
         assert verdict.stability_score >= 0.85
+
+    @pytest.mark.asyncio
+    async def test_pipeline_run_id_generated(self):
+        """Every pipeline run should produce a unique non-empty run_id."""
+        from d_mmce.orchestrator import D_MMCE
+
+        providers = [
+            MockProvider(name="m1", response_text="Test response."),
+        ]
+        engine = D_MMCE(
+            providers=providers,
+            review_provider_name="auto",
+            stability_threshold=0.85,
+            max_stability_reruns=1,
+            enable_logging_observer=False,
+        )
+        verdict = await engine.run("test")
+
+        assert verdict.run_id != ""
+        assert len(verdict.run_id) > 0
+
+    @pytest.mark.asyncio
+    async def test_pipeline_stage_timings_populated(self):
+        """Stage timings should be populated after a successful run."""
+        from d_mmce.orchestrator import D_MMCE
+
+        providers = [
+            MockProvider(name="m1", response_text="Test response."),
+        ]
+        engine = D_MMCE(
+            providers=providers,
+            review_provider_name="auto",
+            stability_threshold=0.85,
+            max_stability_reruns=1,
+            enable_logging_observer=False,
+        )
+        verdict = await engine.run("test")
+
+        assert "diversify" in verdict.stage_timings
+        assert "infer" in verdict.stage_timings
+        assert "review" in verdict.stage_timings
+        assert "cluster" in verdict.stage_timings
+        assert "synthesize" in verdict.stage_timings
+        for stage, elapsed in verdict.stage_timings.items():
+            assert elapsed >= 0, f"Stage '{stage}' has negative timing"
+
+    @pytest.mark.asyncio
+    async def test_pipeline_confidence_score_positive(self):
+        """The confidence score should be > 0 for a successful run."""
+        from d_mmce.orchestrator import D_MMCE
+
+        providers = [
+            MockProvider(name="m1", response_text="Test response."),
+        ]
+        engine = D_MMCE(
+            providers=providers,
+            review_provider_name="auto",
+            stability_threshold=0.85,
+            max_stability_reruns=1,
+            enable_logging_observer=False,
+        )
+        verdict = await engine.run("test")
+
+        assert 0 < verdict.confidence_score <= 1.0
+
+    @pytest.mark.asyncio
+    async def test_pipeline_events_carry_run_id(self):
+        """All events should carry the run_id of the current pipeline run."""
+        from d_mmce.orchestrator import D_MMCE
+
+        providers = [
+            MockProvider(name="m1", response_text="Test response."),
+        ]
+        engine = D_MMCE(
+            providers=providers,
+            review_provider_name="auto",
+            stability_threshold=0.85,
+            max_stability_reruns=1,
+            enable_logging_observer=False,
+        )
+
+        run_ids: set[str] = set()
+
+        def capture_run_id(evt: Event):
+            if evt.run_id:
+                run_ids.add(evt.run_id)
+
+        engine.event_bus.subscribe(EventType.MODEL_RESPONSE, capture_run_id)
+        engine.event_bus.subscribe(EventType.FINAL_VERDICT, capture_run_id)
+
+        verdict = await engine.run("test")
+
+        # All events should share the same run_id
+        assert len(run_ids) == 1
+        assert verdict.run_id in run_ids
+
+    @pytest.mark.asyncio
+    async def test_pipeline_final_verdict_event_has_confidence(self):
+        """FINAL_VERDICT event should include confidence_score and stage_timings."""
+        from d_mmce.orchestrator import D_MMCE
+
+        providers = [
+            MockProvider(name="m1", response_text="Answer about auroras."),
+        ]
+        engine = D_MMCE(
+            providers=providers,
+            review_provider_name="auto",
+            stability_threshold=0.85,
+            max_stability_reruns=1,
+            enable_logging_observer=False,
+        )
+
+        verdict_events: list[Event] = []
+        engine.event_bus.subscribe(EventType.FINAL_VERDICT, verdict_events.append)
+
+        await engine.run("test")
+
+        assert len(verdict_events) == 1
+        assert "confidence_score" in verdict_events[0].payload
+        assert "stage_timings" in verdict_events[0].payload
 
