@@ -335,11 +335,16 @@ D_MMCE/
 ├── main.py                          # CLI entry point
 ├── server.py                        # FastAPI + SSE streaming server
 ├── requirements.txt                 # All dependencies
+├── pytest.ini                       # Test configuration
 ├── .env.example                     # API key template
 ├── .gitignore                       # Standard Python gitignore
 ├── d_mmce.log                       # Runtime debug log (auto-created)
 ├── static/
 │   └── index.html                   # Single-page web UI (zero build step)
+├── tests/
+│   ├── conftest.py                  # Shared fixtures & MockProvider
+│   ├── test_unit.py                 # Unit tests (schemas, observer, perturbator, factory)
+│   └── test_integration.py          # Integration & E2E tests (full pipeline)
 └── d_mmce/
     ├── __init__.py                  # Public API: D_MMCE, FinalVerdict
     ├── schemas.py                   # Typed dataclasses (ModelResponse, etc.)
@@ -394,6 +399,40 @@ D_MMCE/
 | Web server | FastAPI + SSE (Server-Sent Events) streaming |
 | Frontend | Vanilla HTML/CSS/JS — zero build step, dark-themed UI |
 | Logging | Python `logging` → console + `d_mmce.log` file |
+
+---
+
+## 🧪 Testing
+
+The test suite uses **mock providers** — no API keys or Ollama required. Tests run in ~8 seconds.
+
+### Run all tests
+
+```bash
+pytest                    # run everything
+pytest -v                 # verbose output
+pytest tests/test_unit.py # unit tests only
+pytest tests/test_integration.py  # integration & E2E only
+```
+
+### Test structure
+
+| File | Tests | What it covers |
+|---|---|---|
+| `tests/conftest.py` | — | `MockProvider` (deterministic, no network), shared fixtures |
+| `tests/test_unit.py` | 29 | Schemas (`PerturbedPrompt`, `ModelResponse`, `ContradictionMatrix`, `FinalVerdict`), `EventBus` pub/sub, `PromptPerturbator` variants, `ModelProvider.generate()`, peer review parsing & penalty calculation, `ProviderFactory` registry |
+| `tests/test_integration.py` | 20 | `PeerReviewer` full flow, `SemanticClusterer` consensus & outlier detection, `MetaJudge` synthesis & stability convergence, **Full E2E pipeline** (query → diversify → infer → review → cluster → synthesize → verdict) |
+
+### Key E2E tests
+
+| Test | Validates |
+|---|---|
+| `test_full_pipeline` | Complete pipeline returns a `FinalVerdict` with a non-empty answer |
+| `test_pipeline_emits_all_event_types` | All expected event types fire during a run |
+| `test_pipeline_model_response_has_payload` | `MODEL_RESPONSE` events carry `text`, `provider`, `variant` |
+| `test_pipeline_final_verdict_has_answer_payload` | `FINAL_VERDICT` event includes the full answer |
+| `test_pipeline_deterministic_converges` | Stability Loop converges (score ≥ 0.85) with deterministic inputs |
+| `test_pipeline_no_providers_returns_error` | Graceful error when no providers are available |
 
 ---
 
