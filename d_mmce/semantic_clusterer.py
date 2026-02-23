@@ -247,7 +247,7 @@ class SemanticClusterer:
         insufficient = (
             len(members) < self._min_cluster_size
             or consensus_ratio < self._min_consensus_ratio
-        ) and total >= self._min_cluster_size
+        )
 
         # --- Compute centroid and pick nearest response ---
         centroid = np.mean(member_embeds, axis=0)
